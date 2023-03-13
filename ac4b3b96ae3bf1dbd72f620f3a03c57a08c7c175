@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "2b20ae53_65a95412",
+        "filename": "system/bta/ag/bta_ag_sco.cc",
+        "patchSetId": 1
+      },
+      "lineNbr": 195,
+      "author": {
+        "id": 1000012
+      },
+      "writtenOn": "2023-03-13T02:28:53Z",
+      "side": 1,
+      "message": "can you change this property to vendor.qcom.bluetooth.soc?  Qualcomm renamed it and and we should be consistent. also, is this in los?",
+      "revId": "ac4b3b96ae3bf1dbd72f620f3a03c57a08c7c175",
+      "serverId": "3162e3d8-d894-470e-abd9-724f7b0effad"
+    }
+  ]
+}
