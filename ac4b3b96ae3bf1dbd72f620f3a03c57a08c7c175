@@ -3,6 +3,23 @@
     {
       "unresolved": true,
       "key": {
+        "uuid": "9e978b7b_990a75e4",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000865
+      },
+      "writtenOn": "2023-03-14T07:02:32Z",
+      "side": 1,
+      "message": "they did some replacement commit, this doesnt exist for them, instead they are doing this https://github.com/LineageOS/android_packages_modules_Bluetooth/commit/479bfdf3615dbc559b8f7f748bd83efa4585138b",
+      "revId": "ac4b3b96ae3bf1dbd72f620f3a03c57a08c7c175",
+      "serverId": "3162e3d8-d894-470e-abd9-724f7b0effad"
+    },
+    {
+      "unresolved": true,
+      "key": {
         "uuid": "2b20ae53_65a95412",
         "filename": "system/bta/ag/bta_ag_sco.cc",
         "patchSetId": 1
@@ -14,6 +31,24 @@
       "writtenOn": "2023-03-13T02:28:53Z",
       "side": 1,
       "message": "can you change this property to vendor.qcom.bluetooth.soc?  Qualcomm renamed it and and we should be consistent. also, is this in los?",
+      "revId": "ac4b3b96ae3bf1dbd72f620f3a03c57a08c7c175",
+      "serverId": "3162e3d8-d894-470e-abd9-724f7b0effad"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "aa55a640_36de5ae1",
+        "filename": "system/bta/ag/bta_ag_sco.cc",
+        "patchSetId": 1
+      },
+      "lineNbr": 195,
+      "author": {
+        "id": 1000865
+      },
+      "writtenOn": "2023-03-14T07:02:32Z",
+      "side": 1,
+      "message": "they did some replacement commit, this doesnt exist for them, instead they are doing this https://github.com/LineageOS/android_packages_modules_Bluetooth/commit/479bfdf3615dbc559b8f7f748bd83efa4585138b\n\ni could abandon this one and push new one",
+      "parentUuid": "2b20ae53_65a95412",
       "revId": "ac4b3b96ae3bf1dbd72f620f3a03c57a08c7c175",
       "serverId": "3162e3d8-d894-470e-abd9-724f7b0effad"
     }
