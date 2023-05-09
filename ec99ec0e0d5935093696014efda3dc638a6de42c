@@ -16,6 +16,24 @@
       "message": "we have this already",
       "revId": "ec99ec0e0d5935093696014efda3dc638a6de42c",
       "serverId": "3162e3d8-d894-470e-abd9-724f7b0effad"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "0c72adbf_56393885",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000889
+      },
+      "writtenOn": "2023-05-09T13:18:55Z",
+      "side": 1,
+      "message": "I just don\u0027t know how to use gerrit, sorry",
+      "parentUuid": "6ff68006_3b51fc88",
+      "revId": "ec99ec0e0d5935093696014efda3dc638a6de42c",
+      "serverId": "3162e3d8-d894-470e-abd9-724f7b0effad"
     }
   ]
 }
