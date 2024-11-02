@@ -425,10 +425,12 @@ void rfc_check_send_cmd(tRFC_MCB* p_mcb, BT_HDR* p_buf) {
   /* handle queue if L2CAP not congested */
   while (!p_mcb->l2cap_congested) {
     BT_HDR* p = (BT_HDR*)fixed_queue_try_dequeue(p_mcb->cmd_q);
+
+    uint16_t len = p->len;
     if (p == NULL) break;
     if (L2CA_DataWrite(p_mcb->lcid, p) != L2CAP_DW_SUCCESS) {
       log::warn("Unable to write L2CAP data peer:{} cid:{} len:{}",
-                p_mcb->bd_addr, p_mcb->lcid, p->len);
+                p_mcb->bd_addr, p_mcb->lcid, len);
     }
   }
 }
