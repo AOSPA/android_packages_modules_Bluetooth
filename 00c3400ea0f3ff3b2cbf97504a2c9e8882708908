@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "47721f19_56e7c8ce",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000579
+      },
+      "writtenOn": "2024-12-11T16:27:44Z",
+      "side": 1,
+      "message": "    #ifndef TARGET_SUPPORTS_A2DP_RETURN_DELAY_IN_MS\n      *remote_delay_report_ns \u003d remote_delay_report_ * 100000u;\n    #else\n      *remote_delay_report_ns \u003d remote_delay_report_ * 100000ULL;\n    #endif\n\ntry something like this",
+      "revId": "00c3400ea0f3ff3b2cbf97504a2c9e8882708908",
+      "serverId": "3162e3d8-d894-470e-abd9-724f7b0effad"
+    }
+  ]
+}
