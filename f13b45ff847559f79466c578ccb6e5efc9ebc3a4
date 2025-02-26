@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "b0606d31_55d8ad77",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000804
+      },
+      "writtenOn": "2025-02-26T12:00:41Z",
+      "side": 1,
+      "message": "Fixes an issue where bluetooth does not work after signing with private keys and spams logs with \n\nAbort message: \u0027JNI FatalError called: (com.android.bluetooth) frameworks/base/core/jni/com_android_internal_os_Zygote.cpp:2159: selinux_android_setcontext(1002, 0, \"default:privapp:targetSdkVersion\u003d35:partition\u003dsystem:complete\", \"com.android.bluetooth\") failed\u0027",
+      "revId": "f13b45ff847559f79466c578ccb6e5efc9ebc3a4",
+      "serverId": "3162e3d8-d894-470e-abd9-724f7b0effad"
+    }
+  ]
+}
