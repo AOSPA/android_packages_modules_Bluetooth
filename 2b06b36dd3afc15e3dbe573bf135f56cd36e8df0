@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "55caba2c_67dc05d3",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000895
+      },
+      "writtenOn": "2025-08-04T13:15:38Z",
+      "side": 1,
+      "message": "on a15 this breaks bt with custom keys and partner modules, switching to aosp key was the fix",
+      "revId": "2b06b36dd3afc15e3dbe573bf135f56cd36e8df0",
+      "serverId": "3162e3d8-d894-470e-abd9-724f7b0effad"
+    }
+  ]
+}
