@@ -2335,6 +2335,7 @@ public class BassClientService extends ProfileService {
                 return;
             }
 
+            boolean isSearching = isSearchInProgress();
             synchronized (mSourceSyncRequestsQueue) {
                 // updates syncHandle, advSid
                 // set other fields as invalid or null
@@ -2350,14 +2351,12 @@ public class BassClientService extends ProfileService {
                 addActiveSyncedSource(syncHandle);
 
                 if (!leaudioBroadcastResyncHelper()) {
-                    synchronized (mSearchScanCallbackLock) {
-                        // when searching is stopped then start timer to stop active syncs
-                        if (!isSearchInProgress()) {
-                            mHandler.removeMessages(MESSAGE_SYNC_TIMEOUT);
-                            log("Started MESSAGE_SYNC_TIMEOUT");
-                            mHandler.sendEmptyMessageDelayed(
-                                    MESSAGE_SYNC_TIMEOUT, sSyncActiveTimeout.toMillis());
-                        }
+                    // when searching is stopped then start timer to stop active syncs
+                    if (!isSearching) {
+                        mHandler.removeMessages(MESSAGE_SYNC_TIMEOUT);
+                        log("Started MESSAGE_SYNC_TIMEOUT");
+                        mHandler.sendEmptyMessageDelayed(
+                                MESSAGE_SYNC_TIMEOUT, sSyncActiveTimeout.toMillis());
                     }
                 } else {
                     mTimeoutHandler.stop(broadcastId, MESSAGE_BROADCAST_MONITOR_TIMEOUT);
@@ -2956,7 +2955,7 @@ public class BassClientService extends ProfileService {
 
         // Make sure scan is enabled before PA sync
         if (!isSearchInProgress()) {
-            enableBassScan();
+            mHandler.post(() -> enableBassScan());
         }
 
         // Check if there are resources for sync
@@ -4029,15 +4028,20 @@ public class BassClientService extends ProfileService {
 
         // Continue to check if there is pending source to add due to BASS not ready
         synchronized (mPendingSourcesToAdd) {
+            AddSourceData sourceToAdd = null;
             Iterator<AddSourceData> iterator = mPendingSourcesToAdd.iterator();
             while (iterator.hasNext()) {
                 AddSourceData pendingSourcesToAdd = iterator.next();
                 if (pendingSourcesToAdd.sink.equals(sink)) {
-                    Log.d(TAG, "handleBassStateReady: retry adding source with device, " + sink);
-                    addSource(pendingSourcesToAdd.sink, pendingSourcesToAdd.sourceMetadata, false);
+                    sourceToAdd = pendingSourcesToAdd;
                     iterator.remove();
-                    return;
+                    break;
                 }
+            }
+            if (sourceToAdd != null) {
+                Log.d(TAG, "handleBassStateReady: retry adding source with device, " + sink);
+                addSource(sourceToAdd.sink, sourceToAdd.sourceMetadata, false);
+                return;
             }
         }
     }

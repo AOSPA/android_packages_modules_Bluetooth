@@ -156,6 +156,7 @@ public:
   void RemoveNode(const std::shared_ptr<LeAudioDevice>& leAudioDevice);
   bool IsEmpty(void) const;
   bool IsAnyDeviceConnected(void) const;
+  bool IsAnyDeviceDisconnecting(void) const;
   int Size(void) const;
   int DesiredSize(void) const;
   int NumOfConnected() const;
@@ -194,6 +195,7 @@ public:
   bool IsGroupReadyToSuspendStream(void) const;
   bool IsSeamlessSupported(void);
   void DisableLeXCodec(bool status);
+  bool IsLeXCodecEnabled();
   void PopulateVendorMetadatabyDirection(types::LeAudioContextType context_type, uint8_t direction,
                                          types::LeAudioLtvMap pacs_metadata,
                                          const types::AseConfiguration& conf) const;

@@ -77,6 +77,7 @@
 #include "stack/include/btm_ble_api_types.h"
 #include "stack/include/btm_log_history.h"
 #include "stack/include/main_thread.h"
+#include "stack/include/btm_client_interface.h"
 #include "types/raw_address.h"
 
 #ifdef __ANDROID__
@@ -587,9 +588,13 @@ public:
    */
   void UpdateCodecConfig(const RawAddress& peer_address,
                          const std::vector<btav_a2dp_codec_config_t>& codec_preferences,
-                         std::promise<void> peer_ready_promise) {
+                         std::promise<void> peer_ready_promise, bool is_metadata_update) {
     // Restart the session if the codec for the active peer is updated
     A2dpCodecConfig* current_codec = bta_av_get_a2dp_current_codec();
+    bool is_a2dp_offload_codec_extensibility_enabled_ =
+      osi_property_get_bool("persist.vendor.qcom.bluetooth.a2dp_offload_codec_extensibility",false);
+    log::info("provider info a2dp offload extensiblity: {}, is_metadata_update: {}",
+               is_a2dp_offload_codec_extensibility_enabled_, is_metadata_update);
     bool aptX_config_change = true;
     uint16_t cs4 = 0;
     for (auto cp : codec_preferences) {
@@ -615,6 +620,17 @@ public:
             (codec_config.bits_per_sample == cp.bits_per_sample)) {
           aptX_config_change = false;
           log::info("Aptx Adaptive core config didn't change");
+          break;
+        }
+        if (is_metadata_update && !is_a2dp_offload_codec_extensibility_enabled_) {
+          aptX_config_change = false;
+          log::info("Metadata update for Aptx Adaptive codec with A2DP Extensiblity disabled");
+          break;
+        }
+      } else {
+        if (is_metadata_update) {
+          aptX_config_change = false;
+          log::info("Metadata update for non Aptx Adaptive codec");
           break;
         }
       }
@@ -2389,6 +2405,7 @@ bool BtifAvStateMachine::StateOpened::ProcessEvent(uint32_t event, void* p_data)
       (p_av->remote_cmd.rc_id == AVRC_ID_PLAY)) {
     log::verbose("Peer {} : Resetting remote suspend flag on RC PLAY", peer_.PeerAddress());
     peer_.ClearFlags(BtifAvPeer::kFlagRemoteSuspend);
+    modify_sniff_policy(true, peer_.PeerAddress());
   }
 
   switch (event) {
@@ -2585,6 +2602,7 @@ bool BtifAvStateMachine::StateOpened::ProcessEvent(uint32_t event, void* p_data)
       if (peer_.CheckFlags(BtifAvPeer::kFlagRemoteSuspend)) {
         log::verbose("Peer {} : Resetting remote suspend flag on RC PLAY", peer_.PeerAddress());
         peer_.ClearFlags(BtifAvPeer::kFlagRemoteSuspend);
+        modify_sniff_policy(true, peer_.PeerAddress());
       }
       break;
 
@@ -2621,7 +2639,7 @@ bool BtifAvStateMachine::StateOpened::ProcessEvent(uint32_t event, void* p_data)
         const std::vector<btav_a2dp_codec_config_t>& codec_preferences = {codec_config};
         std::promise<void> peer_ready_promise;
         btif_av_source.UpdateCodecConfig(peer_.PeerAddress(), codec_preferences,
-                                         std::move(peer_ready_promise));
+                                         std::move(peer_ready_promise), true);
       }
     } break;
 
@@ -2646,7 +2664,7 @@ bool BtifAvStateMachine::StateOpened::ProcessEvent(uint32_t event, void* p_data)
           if (req_data) {
             btif_av_source.UpdateCodecConfig(peer_.PeerAddress(),
                                              req_data.value().codec_preferences,
-                                             std::move(req_data.value().reconf_ready_promise));
+                                             std::move(req_data.value().reconf_ready_promise), false);
           }
         }
       }
@@ -2674,6 +2692,7 @@ void BtifAvStateMachine::StateStarted::OnEnter() {
 
   // We are again in started state, clear any remote suspend flags
   peer_.ClearFlags(BtifAvPeer::kFlagRemoteSuspend);
+  modify_sniff_policy(true, peer_.PeerAddress());
 
   btif_a2dp_sink_set_rx_flush(false);
 
@@ -2725,6 +2744,8 @@ bool BtifAvStateMachine::StateStarted::ProcessEvent(uint32_t event, void* p_data
       // If we were remotely suspended but suspend locally, local suspend
       // always overrides.
       peer_.ClearFlags(BtifAvPeer::kFlagRemoteSuspend);
+
+      modify_sniff_policy(true, peer_.PeerAddress());
 
       if (peer_.IsSink() &&
           (peer_.IsActivePeer() || !btif_av_stream_started_ready(A2dpType::kSource))) {
@@ -2786,7 +2807,12 @@ bool BtifAvStateMachine::StateStarted::ProcessEvent(uint32_t event, void* p_data
                                  peer_.IsSource() ? A2dpType::kSink : A2dpType::kSource);
         }
       } else {
-        log::info("Remote Suspend, ignore calling btif_a2dp_on_suspended");
+        if (peer_.CheckFlags(BtifAvPeer::kFlagLocalSuspendPending)) {
+          log::info("Remote Suspend, but local suspend pending calling btif_a2dp_on_suspended");
+          btif_a2dp_on_suspended(&p_av->suspend,
+                                 peer_.IsSource() ? A2dpType::kSink : A2dpType::kSource);
+        }
+        log::info("Remote Suspend, no local suspend pending,ignore calling btif_a2dp_on_suspended");
       }
       // If not successful, remain in current state
       if (p_av->suspend.status != BTA_AV_SUCCESS) {
@@ -2808,6 +2834,8 @@ bool BtifAvStateMachine::StateStarted::ProcessEvent(uint32_t event, void* p_data
         // stream only if we did not already initiate a local suspend.
         if (!peer_.CheckFlags(BtifAvPeer::kFlagLocalSuspendPending)) {
           peer_.SetFlags(BtifAvPeer::kFlagRemoteSuspend);
+          // once remote suspend flag is set , disable the sniff
+          modify_sniff_policy(false, peer_.PeerAddress());
         }
       } else {
         state = BTAV_AUDIO_STATE_STOPPED;
@@ -2914,7 +2942,7 @@ bool BtifAvStateMachine::StateStarted::ProcessEvent(uint32_t event, void* p_data
         const std::vector<btav_a2dp_codec_config_t>& codec_preferences = {codec_config};
         std::promise<void> peer_ready_promise;
         btif_av_source.UpdateCodecConfig(peer_.PeerAddress(), codec_preferences,
-                                         std::move(peer_ready_promise));
+                                         std::move(peer_ready_promise), true);
       }
     } break;
 
@@ -2938,7 +2966,7 @@ bool BtifAvStateMachine::StateStarted::ProcessEvent(uint32_t event, void* p_data
         auto req_data = peer_.GetReconfigureStreamData();
         if (req_data) {
           btif_av_source.UpdateCodecConfig(peer_.PeerAddress(), req_data.value().codec_preferences,
-                                           std::move(req_data.value().reconf_ready_promise));
+                                           std::move(req_data.value().reconf_ready_promise), false);
         }
       }
     } break;
@@ -3900,7 +3928,7 @@ bt_status_t btif_av_source_set_codec_config_preference(
   } else {
     status = do_in_main_thread(base::BindOnce(&BtifAvSource::UpdateCodecConfig,
                                               base::Unretained(&btif_av_source), peer_address,
-                                              codec_preferences, std::move(peer_ready_promise)));
+                                              codec_preferences, std::move(peer_ready_promise), false));
   }
 
   if (status != BT_STATUS_SUCCESS) {

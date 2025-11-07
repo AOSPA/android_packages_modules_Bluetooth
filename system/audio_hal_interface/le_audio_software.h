@@ -70,6 +70,7 @@ constexpr uint8_t kBitsPerSample32 = 32;
 struct StreamCallbacks {
   std::function<bool(bool start_media_task)> on_resume_;
   std::function<bool(void)> on_suspend_;
+  std::function<bool(void)> on_audio_server_restart_;
   std::function<bool(const source_metadata_v7_t&, DsaMode)> on_metadata_update_;
   std::function<bool(const sink_metadata_v7_t&)> on_sink_metadata_update_;
 };
@@ -102,6 +103,7 @@ private:
     virtual void ConfirmSuspendRequest() = 0;
     virtual void ConfirmStreamingRequest(bool force) = 0;
     virtual void CancelStreamingRequest() = 0;
+    virtual void CancelStreamingRequestWithUnsupported() = 0;
     virtual void UpdateAudioConfigToHal(const ::bluetooth::le_audio::stream_config& config) = 0;
     virtual void SetCodecPriority(const ::bluetooth::le_audio::types::LeAudioCodecId& codecId,
                                   int32_t priority) = 0;
@@ -123,6 +125,7 @@ public:
     void ConfirmSuspendRequest() override;
     void ConfirmStreamingRequest(bool force) override;
     void CancelStreamingRequest() override;
+    void CancelStreamingRequestWithUnsupported() override;
     void UpdateAudioConfigToHal(const ::bluetooth::le_audio::stream_config& config) override;
     void SetCodecPriority(const ::bluetooth::le_audio::types::LeAudioCodecId& codecId,
                           int32_t priority) override;
@@ -164,6 +167,7 @@ public:
     void ConfirmSuspendRequest() override;
     void ConfirmStreamingRequest(bool force) override;
     void CancelStreamingRequest() override;
+    void CancelStreamingRequestWithUnsupported() override;
     void UpdateAudioConfigToHal(const ::bluetooth::le_audio::stream_config& config) override;
     void SetCodecPriority(const ::bluetooth::le_audio::types::LeAudioCodecId& codecId,
                           int32_t priority) override;

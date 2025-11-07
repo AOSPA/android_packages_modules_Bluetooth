@@ -182,6 +182,7 @@ void LeAudioClientInterface::Sink::StopSession() {}
 void LeAudioClientInterface::Sink::ConfirmSuspendRequest() {}
 void LeAudioClientInterface::Sink::ConfirmStreamingRequest(bool force) {}
 void LeAudioClientInterface::Sink::CancelStreamingRequest() {}
+void LeAudioClientInterface::Sink::CancelStreamingRequestWithUnsupported() {}
 void LeAudioClientInterface::Sink::SetCodecPriority(
         const ::bluetooth::le_audio::types::LeAudioCodecId&, int32_t) {}
 void LeAudioClientInterface::Sink::UpdateAudioConfigToHal(
@@ -226,6 +227,7 @@ void LeAudioClientInterface::Source::StopSession() {}
 void LeAudioClientInterface::Source::ConfirmSuspendRequest() {}
 void LeAudioClientInterface::Source::ConfirmStreamingRequest(bool force) {}
 void LeAudioClientInterface::Source::CancelStreamingRequest() {}
+void LeAudioClientInterface::Source::CancelStreamingRequestWithUnsupported() {}
 void LeAudioClientInterface::Source::SetCodecPriority(
         const ::bluetooth::le_audio::types::LeAudioCodecId&, int32_t) {}
 void LeAudioClientInterface::Source::UpdateAudioConfigToHal(
@@ -249,6 +251,7 @@ public:
   MOCK_METHOD((void), OnAudioDataReady, (const std::vector<uint8_t>& data), (override));
   MOCK_METHOD((void), OnAudioSuspend, (), (override));
   MOCK_METHOD((void), OnAudioResume, (), (override));
+  MOCK_METHOD((void), OnAudioServerRestart, (), (override));
   MOCK_METHOD((void), OnAudioMetadataUpdate,
               (const std::vector<struct playback_track_metadata_v7> source_metadata,
                DsaMode dsa_mode),

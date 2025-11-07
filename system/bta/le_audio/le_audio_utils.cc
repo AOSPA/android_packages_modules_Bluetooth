@@ -206,7 +206,13 @@ AudioContexts GetAudioContextsFromSourceMetadata(
     if (isMetadataTagPresent(entry.tags, "VX_AOSP_SAMPLESOUND")) {
       track_contexts.set(LeAudioContextType::SOUNDEFFECTS);
     } else {
-      track_contexts.set(AudioContentToLeAudioContext(track.content_type, track.usage));
+      bool pts_gmap_mxlt = osi_property_get_bool("persist.vendor.qcom.bluetooth.pts_gmap_mxlt", false);
+      if(pts_gmap_mxlt) {
+        log::info(" pts_gmap_mxlt is true, convert MEDIA to GAME context");
+        track_contexts.set(LeAudioContextType::GAME);
+      } else {
+        track_contexts.set(AudioContentToLeAudioContext(track.content_type, track.usage));
+      }
     }
   }
   return track_contexts;
@@ -1042,12 +1048,12 @@ bool IsAseConfigMatchedWithPreferredRequirements(
     /* Octets per frame */
     if (!ase_config.octets_per_codec_frame || !req_config.octets_per_codec_frame) {
       log::debug("Missing octets per codec frame");
-      return false;
     }
-    if (ase_config.octets_per_codec_frame.value() != req_config.octets_per_codec_frame.value()) {
+    if (ase_config.octets_per_codec_frame &&
+        req_config.octets_per_codec_frame &&
+        ase_config.octets_per_codec_frame.value() != req_config.octets_per_codec_frame.value()) {
       log::debug("Ase cfg: Octets per frame={}", ase_config.octets_per_codec_frame.value());
       log::debug("Req cfg: Octets per frame={}", req_config.octets_per_codec_frame.value());
-      return false;
     }
   }
 
