@@ -374,13 +374,32 @@ public class MediaPlayerList {
 
     /** Sets the {@link #mBrowsingPlayerId} and returns the number of items in current path */
     public void setBrowsedPlayer(int playerId, String currentPath, SetBrowsedPlayerCallback cb) {
+        Log.i(TAG, "Browse Refactor " + Flags.browsingRefactor() +
+                   " Multi player support " + Util.areMultiplePlayersSupported() +
+                   " SetAddressplayer " + Flags.setAddressedPlayer());
+        Log.i(TAG, "Request playerid  " + playerId + " Current Browseid " + mBrowsingPlayerId +
+                   " current path " + currentPath);
         if (Flags.browsingRefactor()) {
             if (!Util.areMultiplePlayersSupported()) {
-                cb.run(
-                        playerId,
-                        playerId == BLUETOOTH_PLAYER_ID,
-                        currentPath,
-                        mMediaBrowserWrappers.size());
+                // if currentPath is not empty, process it
+                if (!currentPath.equals("")) {
+                    getFolderItems(
+                         playerId,
+                         currentPath,
+                         (parentId, itemList) -> {
+                             cb.run(
+                                      playerId,
+                                      playerId == BLUETOOTH_PLAYER_ID,
+                                      currentPath,
+                                      itemList.size());
+                         });
+                } else {
+                    cb.run(
+                            playerId,
+                            playerId == BLUETOOTH_PLAYER_ID,
+                            currentPath,
+                            mMediaBrowserWrappers.size());
+                }
                 return;
             }
             if (!haveMediaBrowser(playerId)) {
@@ -1023,7 +1042,7 @@ public class MediaPlayerList {
         int previousActivePlayerId = mActivePlayerId;
         MediaPlayerWrapper previousPlayer = getActivePlayer();
 
-        Log.d(TAG, "setActivePlayer: playerId: " + playerId + ", previousActivePlayerId:" +
+        Log.d(TAG, "setActivePlayer(): playerId: " + playerId + ", previousActivePlayerId:" +
                 previousActivePlayerId);
 
         if (playerId == previousActivePlayerId) {
@@ -1039,7 +1058,7 @@ public class MediaPlayerList {
 
         mActivePlayerId = playerId;
 
-        Log.d(TAG, "setActivePlayer: mActivePlayerId: " + mActivePlayerId +
+        Log.d(TAG, "setActivePlayer(): mActivePlayerId: " + mActivePlayerId +
                    ", mAddressedPlayerId:" + mAddressedPlayerId);
 
         if (Utils.isPtsTestMode()) {
@@ -1052,7 +1071,7 @@ public class MediaPlayerList {
             // We don't send an addressed player update.
             if (mActivePlayerId != mAddressedPlayerId) {
                 mAddressedPlayerId = mActivePlayerId;
-                Log.d(TAG, "setActivePlayer AddressedPlayer changed to " + mAddressedPlayerId);
+                Log.d(TAG, "setActivePlayer(): AddressedPlayer changed to " + mAddressedPlayerId);
                 sendFolderUpdate(false, true, false);
             }
         }
@@ -1075,9 +1094,11 @@ public class MediaPlayerList {
         }
 
         MediaData data = player.getCurrentMediaData();
-        if (mAudioPlaybackIsActive) {
+        if (data != null && mAudioPlaybackIsActive) {
             data.state = mCurrMediaData.state;
-            Log.d(TAG, "setActivePlayer mAudioPlaybackIsActive=true, state=" + data.state);
+            Log.d(TAG, "setActivePlayer(): mAudioPlaybackIsActive=true, state=" + data.state);
+        } else {
+            Log.w(TAG, "setActivePlayer(): data is null or mAudioPlaybackIsActive=false");
         }
         sendMediaUpdate(data);
     }
@@ -1380,6 +1401,13 @@ public class MediaPlayerList {
                             && player.getPlaybackState().getState() == PlaybackState.STATE_PLAYING
                             && (data.state.getState() != PlaybackState.STATE_PLAYING)) {
                         Log.d(TAG, "Some audio playbacks are still active, drop it");
+                        return;
+                    }
+
+                    if (mAudioPlaybackIsActive &&
+                            (data.state.getState() == PlaybackState.STATE_PAUSED ||
+                            data.state.getState() == PlaybackState.STATE_STOPPED)) {
+                        Log.d(TAG, "Audio playback is still active, drop state=" + data.state);
                         return;
                     }
                     sendMediaUpdate(data);

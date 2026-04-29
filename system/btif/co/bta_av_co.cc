@@ -476,6 +476,7 @@ void BtaAvCo::ProcessSetConfig(tBTA_AV_HNDL bta_av_handle, const RawAddress& pee
   uint8_t category = A2DP_SUCCESS;
   bool reconfig_needed = false;
   uint8_t error_code = 0;
+  uint8_t new_codec_config[AVDT_CODEC_SIZE];
 
   log::verbose(
           "bta_av_handle=0x{:x} peer_address={} seid={} num_protect={} "
@@ -528,6 +529,16 @@ void BtaAvCo::ProcessSetConfig(tBTA_AV_HNDL bta_av_handle, const RawAddress& pee
       status = A2DP_IsSinkCodecSupported(p_codec_info);
 
       if (status == A2DP_SUCCESS) {
+        //Saving codec config for Incoming Connection
+        if (!p_peer->GetCodecs()->setSinkCodecConfig(p_codec_info,
+                                                     true /* is_capability */,
+                                                     new_codec_config,
+                                            true /* select_current_codec */)) {
+          log::verbose("cannot set sink codec {}",
+                            bta_av_co_get_codec_config_a2dp_sink(peer_address,
+                            new_codec_config)->name());
+          return;
+        }
         // If Peer is Source, and our config subset matches with what is
         // requested by peer, then just accept what peer wants.
         SaveNewCodecConfig(p_peer, p_codec_info, num_protect, p_protect_info, t_local_sep);
@@ -1021,16 +1032,18 @@ bool BtaAvCo::ReportSourceCodecState(BtaAvCoPeer* p_peer) {
     return false;
   }
 
-  bool is_qhs_phy_supported = get_btm_client_interface().vendor.BTM_IsQHSPhySupported(
-          p_peer->addr, BT_TRANSPORT_BR_EDR);
+  if (!osi_property_get_bool("persist.vendor.qcom.bluetooth.vsc_enabled", false)) {
+    bool is_qhs_phy_supported = get_btm_client_interface().vendor.BTM_IsQHSPhySupported(
+            p_peer->addr, BT_TRANSPORT_BR_EDR);
 
-  if (codec_config.codec_type == BTAV_A2DP_CODEC_INDEX_SOURCE_APTX_ADAPTIVE) {
-    if (is_qhs_phy_supported) {
-      codec_config.codec_specific_3 &= ~((int64_t)QHS_SUPPORT_MASK);
-      codec_config.codec_specific_3 |= (int64_t)QHS_SUPPORT_AVAILABLE;
-    } else {
-      codec_config.codec_specific_3 &= ~((int64_t)QHS_SUPPORT_MASK);
-      codec_config.codec_specific_3 |= (int64_t)QHS_SUPPORT_NOT_AVAILABLE;
+    if (codec_config.codec_type == BTAV_A2DP_CODEC_INDEX_SOURCE_APTX_ADAPTIVE) {
+      if (is_qhs_phy_supported) {
+        codec_config.codec_specific_3 &= ~((int64_t)QHS_SUPPORT_MASK);
+        codec_config.codec_specific_3 |= (int64_t)QHS_SUPPORT_AVAILABLE;
+      } else {
+        codec_config.codec_specific_3 &= ~((int64_t)QHS_SUPPORT_MASK);
+        codec_config.codec_specific_3 |= (int64_t)QHS_SUPPORT_NOT_AVAILABLE;
+      }
     }
   }
 
@@ -1708,4 +1721,15 @@ uint8_t* bta_av_co_get_codec_config(const RawAddress& peer_address) {
   }
   log::error("Unable to found the peer");
   return nullptr;
+}
+
+A2dpCodecConfig* bta_av_co_get_codec_config_a2dp_sink(
+                                                const RawAddress& peer_address,
+                                                uint8_t* p_codec_info) {
+  BtaAvCoPeer* p_peer = bta_av_co_cb.peer_cache_->FindPeer(peer_address);
+  if (p_peer == nullptr || p_peer->GetCodecs() == nullptr) {
+    return nullptr;
+  }
+
+  return p_peer->GetCodecs()->findSinkCodecConfig(p_codec_info);
 }

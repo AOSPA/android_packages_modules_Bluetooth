@@ -554,7 +554,11 @@ uint8_t LeAudioDeviceGroup::GetSCA(void) const {
   uint8_t sca = bluetooth::hci::iso_manager::kIsoSca0To20Ppm;
 
   for (const auto& leAudioDevice : leAudioDevices_) {
-    uint8_t dev_sca = get_btm_client_interface().peer.BTM_GetPeerSCA(leAudioDevice.lock()->address_,
+    auto dev = leAudioDevice.lock();
+    if (!dev) {
+      return 0;
+    }
+    uint8_t dev_sca = get_btm_client_interface().peer.BTM_GetPeerSCA(dev->address_,
                                                                      BT_TRANSPORT_LE);
 
     /* If we could not read SCA from the peer device or sca is 0,
@@ -1354,7 +1358,7 @@ types::LeAudioConfigurationStrategy LeAudioDeviceGroup::GetGroupSinkStrategy() c
       if ((!(locations.to_ulong() & codec_spec_conf::kLeAudioLocationAnyLeft) ||
           !(locations.to_ulong() & codec_spec_conf::kLeAudioLocationAnyRight) ||
           locations.none()) && !mCapNoAudioLocPts) {
-        log::debug("startgy set to MONO_ONE_CIS_PER_DEVICE");
+        log::debug("strategy set to MONO_ONE_CIS_PER_DEVICE");
         return types::LeAudioConfigurationStrategy::MONO_ONE_CIS_PER_DEVICE;
       }
 
@@ -1466,7 +1470,10 @@ types::LeAudioConfigurationStrategy LeAudioDeviceGroup::FindGroupStrategyForConf
 int LeAudioDeviceGroup::GetAseCount(uint8_t direction) const {
   int result = 0;
   for (const auto& device_iter : leAudioDevices_) {
-    result += device_iter.lock()->GetAseCount(direction);
+    auto dev = device_iter.lock();
+    if (dev) {
+      result += dev->GetAseCount(direction);
+    }
   }
 
   return result;
@@ -1505,11 +1512,7 @@ void LeAudioDeviceGroup::CigConfiguration::GetCisCount(LeAudioContextType contex
   }
 
   // For non-LC3 codecs like Opus, we should base the strategy calcualation based on the config
-  const bool derive_strategy_from_config =
-          current_config && true/*com::android::bluetooth::flags::leaudio_add_opus_hi_res_codec_type()*/;
-  log::info("derive_strategy_from_config {}", derive_strategy_from_config);
-
-  auto strategy = derive_strategy_from_config
+  auto strategy = current_config
                           ? group_->FindGroupStrategyForConfig(current_config.get())
                           : group_->GetGroupSinkStrategy();
 
@@ -1640,7 +1643,7 @@ void LeAudioDeviceGroup::CigConfiguration::GenerateCisIds(LeAudioContextType con
     struct bluetooth::le_audio::types::cis cis_entry = {
             .id = idx,
             .type = CisType::CIS_TYPE_BIDIRECTIONAL,
-            .conn_handle = 0,
+            .conn_handle = kInvalidCisConnHandle,
             .addr = RawAddress::kEmpty,
     };
     cises.push_back(cis_entry);
@@ -1652,7 +1655,7 @@ void LeAudioDeviceGroup::CigConfiguration::GenerateCisIds(LeAudioContextType con
     struct bluetooth::le_audio::types::cis cis_entry = {
             .id = idx,
             .type = CisType::CIS_TYPE_UNIDIRECTIONAL_SINK,
-            .conn_handle = 0,
+            .conn_handle = kInvalidCisConnHandle,
             .addr = RawAddress::kEmpty,
     };
     cises.push_back(cis_entry);
@@ -1664,7 +1667,7 @@ void LeAudioDeviceGroup::CigConfiguration::GenerateCisIds(LeAudioContextType con
     struct bluetooth::le_audio::types::cis cis_entry = {
             .id = idx,
             .type = CisType::CIS_TYPE_UNIDIRECTIONAL_SOURCE,
-            .conn_handle = 0,
+            .conn_handle = kInvalidCisConnHandle,
             .addr = RawAddress::kEmpty,
     };
     cises.push_back(cis_entry);
@@ -1848,7 +1851,9 @@ void LeAudioDeviceGroup::CigConfiguration::UnassignCis(LeAudioDevice* leAudioDev
   log::info("Group {}, group_id {}, device: {}, conn_handle: {:#x}", std::format_ptr(group_),
             group_->group_id_, leAudioDevice->address_, conn_handle);
 
-  for (struct bluetooth::le_audio::types::cis& cis_entry : cises) {
+  for (struct bluetooth::le_audio::types::cis& cis_entry : cises){
+    log::info("cis_entry.addr: {}, cis_entry.conn_handle: {:#x}", cis_entry.addr,
+            cis_entry.conn_handle);
     if (cis_entry.conn_handle == conn_handle && cis_entry.addr == leAudioDevice->address_) {
       cis_entry.addr = RawAddress::kEmpty;
     }
@@ -2012,7 +2017,9 @@ bool LeAudioDeviceGroup::IsAudioSetConfigurationSupported(
     uint8_t const max_required_ase_per_dev = ase_cnt / device_cnt + (ase_cnt % device_cnt);
 
     // Use strategy for the whole group (not only the connected devices)
-    auto required_snk_strategy = FindGroupStrategyForConfig(audio_set_conf);
+    auto selected_codec_id = ase_confs[0].codec.id;
+    auto required_snk_strategy = (selected_codec_id == types::LeAudioCodecIdLc3) ?
+        GetGroupSinkStrategy() : FindGroupStrategyForConfig(audio_set_conf);
     auto const strategy = utils::GetStrategyForAseConfig(ase_confs, device_cnt);
 
     log::debug(
@@ -2581,15 +2588,19 @@ void LeAudioDeviceGroup::Disable(int gatt_if) {
   is_enabled_ = false;
 
   for (auto& device_iter : leAudioDevices_) {
-    if (!device_iter.lock()->autoconnect_flag_) {
+    auto dev = device_iter.lock();
+    if (!dev) {
+      continue;
+    }
+    if (!dev->autoconnect_flag_) {
       continue;
     }
 
-    auto connection_state = device_iter.lock()->GetConnectionState();
-    auto address = device_iter.lock()->address_;
+    auto connection_state = dev->GetConnectionState();
+    auto address = dev->address_;
 
     btif_storage_set_leaudio_autoconnect(address, false);
-    device_iter.lock()->autoconnect_flag_ = false;
+    dev->autoconnect_flag_ = false;
 
     log::info("Group {} in state {}. Removing {} from background connect", group_id_,
               bluetooth::common::ToString(GetState()), address);
@@ -2597,7 +2608,7 @@ void LeAudioDeviceGroup::Disable(int gatt_if) {
     BTA_GATTC_CancelOpen(gatt_if, address, false);
 
     if (connection_state == DeviceConnectState::CONNECTING_AUTOCONNECT) {
-      device_iter.lock()->SetConnectionState(DeviceConnectState::DISCONNECTED);
+      dev->SetConnectionState(DeviceConnectState::DISCONNECTED);
     }
   }
 }
@@ -2605,22 +2616,26 @@ void LeAudioDeviceGroup::Disable(int gatt_if) {
 void LeAudioDeviceGroup::Enable(int gatt_if, tBTM_BLE_CONN_TYPE reconnection_mode) {
   is_enabled_ = true;
   for (auto& device_iter : leAudioDevices_) {
-    if (device_iter.lock()->autoconnect_flag_) {
+    auto dev = device_iter.lock();
+    if (!dev) {
+      continue;
+    }
+    if (dev->autoconnect_flag_) {
       continue;
     }
 
-    auto address = device_iter.lock()->address_;
-    auto connection_state = device_iter.lock()->GetConnectionState();
+    auto address = dev->address_;
+    auto connection_state = dev->GetConnectionState();
 
     btif_storage_set_leaudio_autoconnect(address, true);
-    device_iter.lock()->autoconnect_flag_ = true;
+    dev->autoconnect_flag_ = true;
 
     log::info("Group {} in state {}. Adding {} from background connect", group_id_,
               bluetooth::common::ToString(GetState()), address);
 
     if (connection_state == DeviceConnectState::DISCONNECTED) {
       BTA_GATTC_Open(gatt_if, address, reconnection_mode, false);
-      device_iter.lock()->SetConnectionState(DeviceConnectState::CONNECTING_AUTOCONNECT);
+      dev->SetConnectionState(DeviceConnectState::CONNECTING_AUTOCONNECT);
     }
   }
 }
@@ -2629,7 +2644,11 @@ bool LeAudioDeviceGroup::IsEnabled(void) const { return is_enabled_; }
 
 void LeAudioDeviceGroup::AddToAllowListNotConnectedGroupMembers(int gatt_if) {
   for (const auto& device_iter : leAudioDevices_) {
-    auto connection_state = device_iter.lock()->GetConnectionState();
+    auto dev = device_iter.lock();
+    if (!dev) {
+      continue;
+    }
+    auto connection_state = dev->GetConnectionState();
     if (connection_state == DeviceConnectState::CONNECTED ||
         connection_state == DeviceConnectState::CONNECTING_BY_USER ||
         connection_state == DeviceConnectState::CONNECTED_BY_USER_GETTING_READY ||
@@ -2637,7 +2656,7 @@ void LeAudioDeviceGroup::AddToAllowListNotConnectedGroupMembers(int gatt_if) {
       continue;
     }
 
-    auto address = device_iter.lock()->address_;
+    auto address = dev->address_;
     log::info("Group {} in state {}. Adding {} to allow list", group_id_,
               bluetooth::common::ToString(GetState()), address);
 
@@ -2649,17 +2668,21 @@ void LeAudioDeviceGroup::AddToAllowListNotConnectedGroupMembers(int gatt_if) {
      */
     BTA_GATTC_CancelOpen(gatt_if, address, false);
     BTA_GATTC_Open(gatt_if, address, BTM_BLE_DIRECT_CONNECTION, false);
-    device_iter.lock()->SetConnectionState(DeviceConnectState::CONNECTING_AUTOCONNECT);
+    dev->SetConnectionState(DeviceConnectState::CONNECTING_AUTOCONNECT);
   }
 }
 
 void LeAudioDeviceGroup::ApplyReconnectionMode(int gatt_if, tBTM_BLE_CONN_TYPE reconnection_mode) {
   for (const auto& device_iter : leAudioDevices_) {
-    BTA_GATTC_CancelOpen(gatt_if, device_iter.lock()->address_, false);
-    BTA_GATTC_Open(gatt_if, device_iter.lock()->address_, reconnection_mode, false);
+    auto dev = device_iter.lock();
+    if (!dev) {
+      continue;
+    }
+    BTA_GATTC_CancelOpen(gatt_if, dev->address_, false);
+    BTA_GATTC_Open(gatt_if, dev->address_, reconnection_mode, false);
     log::info("Group {} in state {}. Adding {} to default reconnection mode", group_id_,
-              bluetooth::common::ToString(GetState()), device_iter.lock()->address_);
-    device_iter.lock()->SetConnectionState(DeviceConnectState::CONNECTING_AUTOCONNECT);
+              bluetooth::common::ToString(GetState()), dev->address_);
+    dev->SetConnectionState(DeviceConnectState::CONNECTING_AUTOCONNECT);
   }
 }
 
@@ -2788,7 +2811,10 @@ void LeAudioDeviceGroup::PrintDebugState(void) const {
   log::info("{}", debug_str.str());
 
   for (const auto& device_iter : leAudioDevices_) {
-    device_iter.lock()->PrintDebugState();
+    auto dev = device_iter.lock();
+    if (dev) {
+      dev->PrintDebugState();
+    }
   }
 }
 
@@ -2841,11 +2867,17 @@ void LeAudioDeviceGroup::Dump(std::stringstream& stream, int active_group_id) co
   stream << "\n";
 
   for (const auto& device_iter : leAudioDevices_) {
-    device_iter.lock()->Dump(stream);
+    auto dev = device_iter.lock();
+    if (dev) {
+      dev->Dump(stream);
+    }
   }
 
   for (const auto& device_iter : leAudioDevices_) {
-    device_iter.lock()->DumpPacsDebugState(stream);
+    auto dev = device_iter.lock();
+    if (dev) {
+      dev->DumpPacsDebugState(stream);
+    }
   }
   stream << "\n";
 }

@@ -699,10 +699,13 @@ void avdt_scb_snd_snk_delay_rpt_req(AvdtpScb* p_scb, tAVDT_SCB_EVT* /* p_data */
     return;
   }
 
-  tAVDT_SCB_EVT evt;
-  evt.apidelay.hdr.seid = p_scb->peer_seid;
-  evt.apidelay.delay = AVDT_SINK_DELAY_MS * 10;
-  avdt_scb_event(p_scb, AVDT_SCB_API_DELAY_RPT_REQ_EVT, &evt);
+  // check for delay reporting supported otherwise return.
+  if (p_scb->curr_cfg.psc_mask & AVDT_PSC_DELAY_RPT) {
+    tAVDT_SCB_EVT evt;
+    evt.apidelay.hdr.seid = p_scb->peer_seid;
+    evt.apidelay.delay = AVDT_SINK_DELAY_MS * 10;
+    avdt_scb_event(p_scb, AVDT_SCB_API_DELAY_RPT_REQ_EVT, &evt);
+  }
 }
 
 /*******************************************************************************
@@ -759,6 +762,66 @@ void avdt_scb_hdl_start_cmd(AvdtpScb* p_scb, tAVDT_SCB_EVT* /* p_data */) {
   (*p_scb->stream_config.p_avdt_ctrl_cback)(
           avdt_scb_to_hdl(p_scb), p_scb->p_ccb ? p_scb->p_ccb->peer_addr : RawAddress::kEmpty,
           AVDT_START_IND_EVT, NULL, p_scb->stream_config.scb_index);
+}
+
+/*******************************************************************************
+ *
+ * Function         avdt_scb_hdl_pending_start_rsp
+ *
+ * Description      This function send a indication to ccb to send response
+ *                  for a pending start request.
+ *
+ * Returns          Nothing.
+ *
+ ******************************************************************************/
+void avdt_scb_hdl_pending_start_rsp(AvdtpScb* p_scb,
+                            tAVDT_SCB_EVT* p_data) {
+  AvdtpCcb *p_ccb = p_scb->p_ccb;
+  tAVDT_CCB_EVT avdt_ccb_evt;
+  log::debug("send event to ccb error_code = {}", p_data->msg.hdr.err_code);
+  avdt_ccb_evt.msg.hdr.err_code = p_data->msg.hdr.err_code;
+
+  avdt_ccb_event(p_ccb, AVDT_CCB_API_PENDING_START_RSP_EVT, &avdt_ccb_evt);
+}
+
+/*******************************************************************************
+ *
+ * Function         avdt_scb_hdl_pending_start_rej
+ *
+ * Description      This function send a indication to ccb to send neg response
+ *                  for a pending start request.
+ *
+ * Returns          Nothing.
+ *
+ ******************************************************************************/
+void avdt_scb_hdl_pending_start_rej(AvdtpScb* p_scb,
+                            tAVDT_SCB_EVT* p_data) {
+  AvdtpCcb *p_ccb = p_scb->p_ccb;
+  tAVDT_CCB_EVT avdt_ccb_evt;
+  log::debug("send event to ccb error_code = {}", p_data->msg.hdr.err_code);
+  avdt_ccb_evt.msg.hdr.err_code = p_data->msg.hdr.err_code;
+
+  avdt_ccb_event(p_ccb, AVDT_CCB_API_PENDING_START_RSP_EVT, &avdt_ccb_evt);
+}
+
+/*******************************************************************************
+ *
+ * Function         avdt_scb_hdl_pending_suspend_rsp
+ *
+ * Description      This function send a indication to ccb to send response
+ *                  for a pending suspend request.
+ *
+ * Returns          Nothing.
+ *
+ ******************************************************************************/
+void avdt_scb_hdl_pending_suspend_rsp(AvdtpScb* p_scb,
+                            tAVDT_SCB_EVT* p_data) {
+  AvdtpCcb *p_ccb = p_scb->p_ccb;
+  tAVDT_CCB_EVT avdt_ccb_evt;
+  log::debug("send event to ccb error_code = {}", p_data->msg.hdr.err_code);
+  avdt_ccb_evt.msg.hdr.err_code = p_data->msg.hdr.err_code;
+
+  avdt_ccb_event(p_ccb, AVDT_CCB_API_PENDING_SUSPEND_RSP_EVT, &avdt_ccb_evt);
 }
 
 /*******************************************************************************
@@ -1362,17 +1425,20 @@ void avdt_scb_snd_setconfig_rej(AvdtpScb* p_scb, tAVDT_SCB_EVT* p_data) {
  *
  ******************************************************************************/
 void avdt_scb_snd_setconfig_req(AvdtpScb* p_scb, tAVDT_SCB_EVT* p_data) {
-  log::verbose("codec: {}", A2DP_CodecInfoString(p_data->msg.config_cmd.p_cfg->codec_info));
-
+  log::verbose("codec: {}",
+               A2DP_CodecInfoString(p_data->msg.config_cmd.p_cfg->codec_info));
   /* copy API parameters to scb, set scb as in use */
 
   AvdtpCcb* p_ccb = avdt_ccb_by_idx(p_data->msg.config_cmd.hdr.ccb_idx);
+  log::debug("p_scb->p_ccb = {} p_ccb = {}", std::format_ptr(p_scb->p_ccb),
+                                             std::format_ptr(p_ccb));
   if (p_scb->p_ccb != p_ccb) {
     log::error(
             "mismatch in AVDTP SCB/CCB state: (p_scb->p_ccb={} != p_ccb={}): "
             "p_scb={} scb_handle={} ccb_idx={}",
-            std::format_ptr(p_scb->p_ccb), std::format_ptr(p_ccb), std::format_ptr(p_scb),
-            p_scb->ScbHandle(), p_data->msg.config_cmd.hdr.ccb_idx);
+            std::format_ptr(p_scb->p_ccb), std::format_ptr(p_ccb),
+            std::format_ptr(p_scb), p_scb->ScbHandle(),
+            p_data->msg.config_cmd.hdr.ccb_idx);
     avdt_scb_rej_not_in_use(p_scb, p_data);
     return;
   }
