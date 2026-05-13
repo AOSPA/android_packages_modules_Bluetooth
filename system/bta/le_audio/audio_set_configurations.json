@@ -1940,7 +1940,7 @@
       "name": "Two-OneChan-SnkAse-Lc3_48_1-Two-OneChan-SrcAse-Lc3_48_1_1",
       "codec_config_name": "Two-OneChan-SnkAse-Lc3_48_1-Two-OneChan-SrcAse-Lc3_48_1",
       "qos_config_name": [
-        "QoS_Config_48_1_1"
+        "QoS_Config_48_1_1_pts"
       ]
     },
     {
@@ -14510,7 +14510,7 @@
               "type": 1,
               "compound_value": {
                 "value": [
-                  6
+                  8
                 ]
               }
             },
@@ -14613,7 +14613,7 @@
               "type": 1,
               "compound_value": {
                 "value": [
-                  6
+                  8
                 ]
               }
             },
@@ -15686,7 +15686,32 @@
       "max_transport_latency": 75
     },
     {
+      "name": "QoS_Config_48_1_1_pts",
+      "retransmission_number": 5,
+      "max_transport_latency": 20
+    },
+    {
+      "name": "QoS_Config_48_2_1",
+      "retransmission_number": 5,
+      "max_transport_latency": 20
+    },
+    {
+      "name": "QoS_Config_48_3_1",
+      "retransmission_number": 5,
+      "max_transport_latency": 20
+    },
+    {
       "name": "QoS_Config_48_4_1",
+      "retransmission_number": 5,
+      "max_transport_latency": 20
+    },
+    {
+      "name": "QoS_Config_48_5_1",
+      "retransmission_number": 5,
+      "max_transport_latency": 20
+    },
+    {
+      "name": "QoS_Config_48_6_1",
       "retransmission_number": 5,
       "max_transport_latency": 20
     },
