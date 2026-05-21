@@ -1396,6 +1396,7 @@ struct DistanceMeasurementManagerImpl::impl : bluetooth::hal::RangingHalCallback
     // controller may send error if the procedure instance has finished all scheduled procedures.
     if (enable == Enable::DISABLED && status == ErrorCode::COMMAND_DISALLOWED) {
       log::info("ignored the procedure disable command disallow error.");
+      procedure_disable_in_progress = false;
       auto it = cs_requester_trackers_.find(connection_handle);
       if (it != cs_requester_trackers_.end()) {
         if (it->second.disable_due_to_ras_packets_delayed) {
