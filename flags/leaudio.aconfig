@@ -451,6 +451,16 @@ flag {
 }
 
 flag {
+    name: "leaudio_vap_multi_device_arbitration"
+    namespace: "bluetooth"
+    description: "Fix multi-device arbitration for VAP profile"
+    bug: "506585431"
+    metadata {
+        purpose: PURPOSE_BUGFIX
+    }
+}
+
+flag {
     name: "soft_leaudio_health_disable"
     namespace: "bluetooth"
     description: "Softly disable LE Audio upon health recommendation instead of setting policy to forbidden in storage"
