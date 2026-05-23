@@ -22,6 +22,9 @@
 #include <atomic>
 #include <thread>
 
+#include <com_android_bluetooth_flags.h>
+#include <flag_macros.h>
+
 #include "bta/include/bta_vap_server_api.h"
 #include "bta/mock/bta_gatt_api_mock.h"
 #include "bta/test/common/mock_csis_client.h"
@@ -34,6 +37,8 @@
 
 using namespace ::testing;
 using namespace bluetooth::vap;
+
+#define TEST_BT com::android::bluetooth::flags
 
 extern std::atomic<int> num_async_tasks;
 extern bluetooth::common::MessageLoopThread message_loop_thread;
@@ -252,6 +257,209 @@ TEST_F(VapServerTest, notify_vasession_stopped_session_not_active) {
   // Session state is not ACTIVE here.
 
   EXPECT_CALL(mock_gatt_server_interface_, HandleValueIndication(_, _, _, _)).Times(0);
+  GetVapServer()->NotifyVaSessionStopped({test_address_}, true);
+  SyncOnMainLoop();
+}
+
+TEST_F_WITH_FLAGS(
+        VapServerTest, notify_va_session_started_ignores_disconnected_devices,
+        REQUIRES_FLAGS_ENABLED(
+                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+  RawAddress disconnected_device = RawAddress::FromString("aa:bb:cc:dd:ee:ff").value();
+
+  GetVapServer()->SetVaName("MyVa");
+  SyncOnMainLoop();
+
+  // NotifyVaSessionStarted is called with only disconnected devices.
+  // It shouldn't crash or send any notifications.
+  EXPECT_CALL(mock_gatt_server_interface_, HandleValueNotification(_, _, _)).Times(0);
+  GetVapServer()->NotifyVaSessionStarted({disconnected_device}, true);
+  SyncOnMainLoop();
+}
+
+TEST_F_WITH_FLAGS(
+        VapServerTest, on_gatt_connect_inherits_group_state,
+        REQUIRES_FLAGS_ENABLED(
+                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+  RawAddress address2 = RawAddress::FromString("11:22:33:44:55:67").value();
+  ON_CALL(mock_csis_client_, GetGroupId(test_address_, _)).WillByDefault(Return(1));
+  ON_CALL(mock_csis_client_, GetGroupId(address2, _)).WillByDefault(Return(1));
+  ON_CALL(mock_csis_client_, GetDeviceList(1))
+      .WillByDefault(Return(std::vector<RawAddress>{test_address_, address2}));
+
+  GetVapServer()->SetVaName("MyVa");
+  SyncOnMainLoop();
+
+  // test_address_ is already connected from SetUp(). Let's make it ACTIVE.
+  GetVapServer()->NotifyVaSessionStarted({test_address_}, true);
+  SyncOnMainLoop();
+
+  // Now connect address2 (which belongs to the same group)
+  captured_gatt_callback_->p_conn_cb(1, address2, 2, true, GATT_CONN_OK, BT_TRANSPORT_LE);
+  SyncOnMainLoop();
+
+  // Verify that address2 inherited the ACTIVE state from test_address_
+  uint16_t ss_handle = GetCharacteristicHandle(::vap::uuid::kVaSessionStateCharacteristic);
+
+  std::unique_ptr<tGATTS_RSP> captured_rsp = nullptr;
+  EXPECT_CALL(mock_gatt_server_interface_, SendRsp(2, 1, GATT_SUCCESS, _))
+      .WillOnce(Invoke([&](tCONN_ID, uint32_t, tGATT_STATUS, std::unique_ptr<tGATTS_RSP> p_msg) {
+        captured_rsp.swap(p_msg);
+      }));
+
+  captured_gatt_callback_->p_req_cb->read_characteristic_cb(2, 1, address2, ss_handle, 0, false);
+  SyncOnMainLoop();
+
+  ASSERT_NE(captured_rsp, nullptr);
+  ASSERT_EQ(captured_rsp->attr_value.len, 1);
+  EXPECT_EQ(captured_rsp->attr_value.value[0], (uint8_t)::vap::VaSessionState::VA_SESSION_ACTIVE);
+}
+
+TEST_F_WITH_FLAGS(
+        VapServerTest, on_gatt_disconnect_handovers_active_session_to_group_member,
+        REQUIRES_FLAGS_ENABLED(
+                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+  RawAddress address2 = RawAddress::FromString("11:22:33:44:55:67").value();
+  ON_CALL(mock_csis_client_, GetGroupId(test_address_, _)).WillByDefault(Return(1));
+  ON_CALL(mock_csis_client_, GetGroupId(address2, _)).WillByDefault(Return(1));
+  ON_CALL(mock_csis_client_, GetDeviceList(1))
+      .WillByDefault(Return(std::vector<RawAddress>{test_address_, address2}));
+
+  GetVapServer()->SetVaName("MyVa");
+  SyncOnMainLoop();
+
+  captured_gatt_callback_->p_conn_cb(1, address2, 2, true, GATT_CONN_OK, BT_TRANSPORT_LE);
+  SyncOnMainLoop();
+
+  // Set test_address_ as the active device
+  GetVapServer()->NotifyVaSessionStarted({test_address_, address2}, true);
+  SyncOnMainLoop();
+
+  // test_address_ disconnects. The active session should seamlessly handover to address2.
+  // Therefore, OnStopVaSession should NOT be called.
+  EXPECT_CALL(mock_callbacks_, OnStopVaSession(_)).Times(0);
+  captured_gatt_callback_->p_conn_cb(1, test_address_, 1, false, GATT_CONN_OK, BT_TRANSPORT_LE);
+  SyncOnMainLoop();
+
+  // Now, when address2 disconnects, since it's the last active member, OnStopVaSession
+  // should be called for address2, proving the handover was successful.
+  EXPECT_CALL(mock_callbacks_, OnStopVaSession(address2)).Times(1);
+  captured_gatt_callback_->p_conn_cb(1, address2, 2, false, GATT_CONN_OK, BT_TRANSPORT_LE);
+  SyncOnMainLoop();
+}
+
+TEST_F_WITH_FLAGS(
+        VapServerTest, handle_control_point_start_from_other_group_supersedes_session,
+        REQUIRES_FLAGS_ENABLED(
+                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+  RawAddress other_address = RawAddress::FromString("aa:bb:cc:dd:ee:ff").value();
+  ON_CALL(mock_csis_client_, GetGroupId(test_address_, _)).WillByDefault(Return(1));
+  ON_CALL(mock_csis_client_, GetGroupId(other_address, _)).WillByDefault(Return(2));
+
+  GetVapServer()->SetVaName("MyVa");
+  SyncOnMainLoop();
+
+  // Setup connection and control point CCCD for other_address
+  captured_gatt_callback_->p_conn_cb(1, other_address, 2, true, GATT_CONN_OK, BT_TRANSPORT_LE);
+  SyncOnMainLoop();
+  uint16_t cp_ccc_handle = GetDescriptorHandle(::vap::uuid::kVasControlPointCharacteristic);
+  uint8_t ccc_notification_value[] = {0x01, 0x00};
+  EXPECT_CALL(mock_gatt_server_interface_, SendRsp(2, _, _, _));
+  captured_gatt_callback_->p_req_cb->write_descriptor_cb(2, 1, other_address, cp_ccc_handle, 0,
+                                                         false, false, ccc_notification_value, 2);
+  SyncOnMainLoop();
+
+  // Set test_address_ to active
+  GetVapServer()->NotifyVaSessionStarted({test_address_}, true);
+  SyncOnMainLoop();
+
+  // other_address sends START_VA_SESSION
+  uint16_t cp_handle = GetCharacteristicHandle(::vap::uuid::kVasControlPointCharacteristic);
+  uint8_t start_req_value[] = {(uint8_t)::vap::CtpOpcode::START_VA_SESSION};
+
+  // It should stop the existing session of test_address_
+  EXPECT_CALL(mock_callbacks_, OnStopVaSession(test_address_)).Times(1);
+  // It should send OPERATION_FALIED back to other_address to reject its START
+  EXPECT_CALL(mock_gatt_server_interface_, HandleValueNotification(2, cp_handle, _))
+      .WillOnce([](tCONN_ID, uint16_t, std::vector<uint8_t> value) -> tGATT_STATUS {
+        EXPECT_EQ(value[1], (uint8_t)::vap::ResponseCodeValue::OPERATION_FALIED);
+        return GATT_SUCCESS;
+      });
+
+  captured_gatt_callback_->p_req_cb->write_characteristic_cb(
+      2, 2, other_address, cp_handle, 0, false, false, start_req_value, sizeof(start_req_value));
+  SyncOnMainLoop();
+}
+
+TEST_F_WITH_FLAGS(
+        VapServerTest, handle_control_point_stop_from_other_group_rejected,
+        REQUIRES_FLAGS_ENABLED(
+                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+  RawAddress other_address = RawAddress::FromString("aa:bb:cc:dd:ee:ff").value();
+  ON_CALL(mock_csis_client_, GetGroupId(test_address_, _)).WillByDefault(Return(1));
+  ON_CALL(mock_csis_client_, GetGroupId(other_address, _)).WillByDefault(Return(2));
+
+  GetVapServer()->SetVaName("MyVa");
+  SyncOnMainLoop();
+
+  // Setup connection and control point CCCD for other_address
+  captured_gatt_callback_->p_conn_cb(1, other_address, 2, true, GATT_CONN_OK, BT_TRANSPORT_LE);
+  SyncOnMainLoop();
+  uint16_t cp_ccc_handle = GetDescriptorHandle(::vap::uuid::kVasControlPointCharacteristic);
+  uint8_t ccc_notification_value[] = {0x01, 0x00};
+  EXPECT_CALL(mock_gatt_server_interface_, SendRsp(2, _, _, _));
+  captured_gatt_callback_->p_req_cb->write_descriptor_cb(2, 1, other_address, cp_ccc_handle, 0,
+                                                         false, false, ccc_notification_value, 2);
+  SyncOnMainLoop();
+
+  // Set test_address_ to active
+  GetVapServer()->NotifyVaSessionStarted({test_address_}, true);
+  SyncOnMainLoop();
+
+  // other_address sends STOP_VA_SESSION
+  uint16_t cp_handle = GetCharacteristicHandle(::vap::uuid::kVasControlPointCharacteristic);
+  uint8_t stop_req_value[] = {(uint8_t)::vap::CtpOpcode::STOP_VA_SESSION};
+
+  // The stop request should be completely ignored for test_address_
+  EXPECT_CALL(mock_callbacks_, OnStopVaSession(_)).Times(0);
+  // It should send OPERATION_FALIED back to other_address to reject its STOP
+  EXPECT_CALL(mock_gatt_server_interface_, HandleValueNotification(2, cp_handle, _))
+      .WillOnce([](tCONN_ID, uint16_t, std::vector<uint8_t> value) -> tGATT_STATUS {
+        EXPECT_EQ(value[1], (uint8_t)::vap::ResponseCodeValue::OPERATION_FALIED);
+        return GATT_SUCCESS;
+      });
+
+  captured_gatt_callback_->p_req_cb->write_characteristic_cb(
+      2, 2, other_address, cp_handle, 0, false, false, stop_req_value, sizeof(stop_req_value));
+  SyncOnMainLoop();
+}
+
+TEST_F_WITH_FLAGS(
+        VapServerTest, notify_va_session_started_picks_connected_device,
+        REQUIRES_FLAGS_ENABLED(
+                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+  RawAddress disconnected_device = RawAddress::FromString("aa:bb:cc:dd:ee:ff").value();
+
+  GetVapServer()->SetVaName("MyVa");
+  SyncOnMainLoop();
+
+  // Enable notifications for Session State for test_address_ (which is connected)
+  uint16_t ss_ccc_handle = GetDescriptorHandle(::vap::uuid::kVaSessionStateCharacteristic);
+  uint8_t ccc_notification_value[] = {0x01, 0x00};  // Notification enabled
+  EXPECT_CALL(mock_gatt_server_interface_, SendRsp(1, _, _, _));
+  captured_gatt_callback_->p_req_cb->write_descriptor_cb(1, 1, test_address_, ss_ccc_handle, 0,
+                                                         false, false, ccc_notification_value, 2);
+  SyncOnMainLoop();
+
+  // NotifyVaSessionStarted is called with a list where the first device is not connected.
+  // It should skip the disconnected device and set the active device to test_address_.
+  EXPECT_CALL(mock_gatt_server_interface_, HandleValueNotification(1, _, _)).Times(1);
+  GetVapServer()->NotifyVaSessionStarted({disconnected_device, test_address_}, true);
+  SyncOnMainLoop();
+
+  // If it correctly skipped disconnected_device, active_va_device_ is test_address_.
+  // When stopping, we should get another notification on test_address_.
+  EXPECT_CALL(mock_gatt_server_interface_, HandleValueNotification(1, _, _)).Times(1);
   GetVapServer()->NotifyVaSessionStopped({test_address_}, true);
   SyncOnMainLoop();
 }
