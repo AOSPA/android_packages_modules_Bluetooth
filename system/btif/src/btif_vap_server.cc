@@ -49,7 +49,7 @@ class VapServerServiceInterfaceImpl : public VapServerInterface, public VapServe
   }
 
   void RejectVaSession(const RawAddress& bd_addr) override {
-    bluetooth::vap::GetVapServer()->NotifyVaSessionStarted({bd_addr}, false);
+    bluetooth::vap::GetVapServer()->RejectVaSession(bd_addr);
   }
 
   void Cleanup(void) override { bluetooth::vap::GetVapServer()->Cleanup(); }

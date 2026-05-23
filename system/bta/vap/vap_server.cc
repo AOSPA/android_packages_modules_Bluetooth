@@ -340,6 +340,12 @@ public:
          base::BindOnce(&VapServerImpl::set_va_name, base::Unretained(this), va_name));
    }
 
+   void RejectVaSession(const RawAddress& bd_addr) override {
+     do_in_main_thread(
+         base::BindOnce(&VapServerImpl::NotifyVaSessionStarted, base::Unretained(this),
+                        std::vector<RawAddress>{bd_addr}, false));
+   }
+
    void NotifyVaSessionInitialized(RawAddress bda) {
      bool is_success = true;
      log::info("NotifyVaSessionInitialized:, bda", bda);
