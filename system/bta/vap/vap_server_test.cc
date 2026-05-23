@@ -28,6 +28,7 @@
 #include "bta/include/bta_vap_server_api.h"
 #include "bta/mock/bta_gatt_api_mock.h"
 #include "bta/test/common/mock_csis_client.h"
+#include "test/common/btif_storage_mock.h"
 #include "bta/vap/vap_server_types.h"
 #include "bta_csis_api.h"
 #include "btm_api_mock.h"
@@ -101,6 +102,7 @@ protected:
     gatt::SetMockBtaGattServerInterface(&mock_gatt_server_interface_);
     bluetooth::manager::SetMockBtmInterface(&btm_interface_);
     MockCsisClient::SetMockInstanceForTesting(&mock_csis_client_);
+    bluetooth::storage::SetMockBtifStorageInterface(&mock_btif_storage_);
     test_address_ = RawAddress::FromString("11:22:33:44:55:66").value();
 
     // GetVapServer() will create an instance if it's null
@@ -132,6 +134,7 @@ protected:
     gatt::SetMockBtaGattServerInterface(nullptr);
     bluetooth::manager::SetMockBtmInterface(nullptr);
     MockCsisClient::SetMockInstanceForTesting(nullptr);
+    bluetooth::storage::SetMockBtifStorageInterface(nullptr);
     cleanup_message_loop_thread();
   }
 
@@ -149,6 +152,7 @@ protected:
   gatt::MockBtaGattServerInterface mock_gatt_server_interface_;
   NiceMock<bluetooth::manager::MockBtmInterface> btm_interface_;
   NiceMock<MockCsisClient> mock_csis_client_;
+  bluetooth::storage::MockBtifStorageInterface mock_btif_storage_;
   MockVapServerCallbacks mock_callbacks_;
 };
 
@@ -565,6 +569,98 @@ TEST_F(VapServerTest, on_read_descriptor_unknown_client) {
   const uint8_t* value_ptr = captured_rsp->attr_value.value;
   STREAM_TO_UINT16(read_value, value_ptr);
   EXPECT_EQ(read_value, 0x0000);
+}
+
+TEST_F_WITH_FLAGS(
+        VapServerTest, on_write_descriptor_ccc_saves_data,
+        REQUIRES_FLAGS_ENABLED(
+                ACONFIG_FLAG(TEST_BT, leaudio_vap_persistent_storage))) {
+  uint16_t ccc_handle = GetDescriptorHandle(::vap::uuid::kVaSessionStateCharacteristic);
+  uint8_t ccc_value[] = {0x01, 0x00};  // Notification enabled
+
+  EXPECT_CALL(mock_gatt_server_interface_, SendRsp(1, 1, GATT_SUCCESS, _));
+  EXPECT_CALL(mock_btif_storage_, SetVapServerData(test_address_, _)).Times(1);
+  captured_gatt_callback_->p_req_cb->write_descriptor_cb(1, 1, test_address_, ccc_handle, 0, false,
+                                                         false, ccc_value, 2);
+  SyncOnMainLoop();
+}
+
+TEST_F_WITH_FLAGS(
+        VapServerTest, on_gatt_connect_restores_data,
+        REQUIRES_FLAGS_ENABLED(
+                ACONFIG_FLAG(TEST_BT, leaudio_vap_persistent_storage))) {
+  GetVapServer()->SetVaName("MyVa");
+  SyncOnMainLoop();
+
+  RawAddress test_address_2 = RawAddress::FromString("11:22:33:44:55:77").value();
+
+  std::vector<uint8_t> data(16, 0);
+  // Set CCC value for kVaNameCharacteristic to 1 (Notification enabled)
+  data[0] = 0x01;
+  data[1] = 0x00;
+
+  EXPECT_CALL(mock_btif_storage_, GetVapServerData(test_address_2, _))
+      .WillOnce(DoAll(SetArgReferee<1>(data), Return(true)));
+
+  uint16_t name_handle = GetCharacteristicHandle(::vap::uuid::kVaNameCharacteristic);
+  EXPECT_CALL(mock_gatt_server_interface_, HandleValueNotification(2, name_handle, _)).Times(1);
+
+  captured_gatt_callback_->p_conn_cb(1, test_address_2, 2, true, GATT_CONN_OK, BT_TRANSPORT_LE);
+  SyncOnMainLoop();
+}
+
+TEST_F_WITH_FLAGS(
+        VapServerTest, set_va_name_saves_data_to_persistent_storage,
+        REQUIRES_FLAGS_ENABLED(
+                ACONFIG_FLAG(TEST_BT, leaudio_vap_persistent_storage))) {
+  // test_address_ is already connected in SetUp()
+
+  EXPECT_CALL(mock_btif_storage_, SetVapServerData(test_address_, _)).Times(AtLeast(1));
+
+  GetVapServer()->SetVaName("MyNewVaName");
+  SyncOnMainLoop();
+}
+
+TEST_F_WITH_FLAGS(
+        VapServerTest, on_read_descriptor_ccc_returns_restored_data,
+        REQUIRES_FLAGS_ENABLED(
+                ACONFIG_FLAG(TEST_BT, leaudio_vap_persistent_storage))) {
+  GetVapServer()->SetVaName("MyVa");
+  SyncOnMainLoop();
+
+  RawAddress test_address_2 = RawAddress::FromString("11:22:33:44:55:77").value();
+
+  std::vector<uint8_t> data(16, 0);
+  // Set CCC value for kVaSessionStateCharacteristic to 1 (Notification enabled)
+  data[8] = 0x01;
+  data[9] = 0x00;
+
+  EXPECT_CALL(mock_btif_storage_, GetVapServerData(test_address_2, _))
+      .WillOnce(DoAll(SetArgReferee<1>(data), Return(true)));
+
+  // Allow any notifications triggered by the connection
+  EXPECT_CALL(mock_gatt_server_interface_, HandleValueNotification(2, _, _)).Times(AnyNumber());
+
+  captured_gatt_callback_->p_conn_cb(1, test_address_2, 2, true, GATT_CONN_OK, BT_TRANSPORT_LE);
+  SyncOnMainLoop();
+
+  // Now read the CCC descriptor
+  uint16_t ccc_handle = GetDescriptorHandle(::vap::uuid::kVaSessionStateCharacteristic);
+
+  std::unique_ptr<tGATTS_RSP> captured_rsp = nullptr;
+  EXPECT_CALL(mock_gatt_server_interface_, SendRsp(2, 1, GATT_SUCCESS, _))
+          .WillOnce(Invoke([&](tCONN_ID, uint32_t, tGATT_STATUS,
+                               std::unique_ptr<tGATTS_RSP> p_msg) { captured_rsp.swap(p_msg); }));
+
+  captured_gatt_callback_->p_req_cb->read_descriptor_cb(2, 1, test_address_2, ccc_handle, 0, false);
+  SyncOnMainLoop();
+
+  ASSERT_NE(captured_rsp, nullptr);
+  ASSERT_EQ(captured_rsp->attr_value.len, 2);
+  uint16_t read_value;
+  const uint8_t* value_ptr = captured_rsp->attr_value.value;
+  STREAM_TO_UINT16(read_value, value_ptr);
+  EXPECT_EQ(read_value, 0x0001);
 }
 
 }  // namespace bluetooth::vap

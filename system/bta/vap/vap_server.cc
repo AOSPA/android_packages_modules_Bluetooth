@@ -37,6 +37,7 @@
 #include "bta/vap/vap_server_types.h"
 #include "gd/common/utils.h"
 #include "gd/os/rand.h"
+#include "btif/include/btif_profile_storage.h"
 #include "hardware/bt_common_types.h"
 #include "main/shim/entry.h"
 #include "stack/include/bt_types.h"
@@ -82,6 +83,12 @@ public:
     PendingWriteResponse pending_write_response_;
     uint16_t mtu_ = kDefaultGattMtu;
     VaSessionState va_session_state_ = VaSessionState::VA_SESSION_UNAVAILABLE;
+    std::string notified_va_name_ = "";
+    std::string notified_va_uuid_ = "";
+    uint8_t notified_ccid_ = 0xFF;
+    uint8_t notified_session_state_ = 0xFF;
+    uint8_t notified_supported_features_ = 0xFF;
+    bool save_pending_ = false;
   };
 
   void Initialize(bluetooth::vap::VapServerCallbacks* callbacks) override {
@@ -268,6 +275,81 @@ public:
     do_in_main_thread(base::BindOnce(&VapServerImpl::do_cleanup, base::Unretained(this)));
   }
 
+  std::vector<uint8_t> SerializeVapData(const RemoteClient& client) {
+    std::vector<uint8_t> data(16 + client.notified_va_name_.length());
+    uint8_t* p = data.data();
+
+    UINT16_TO_STREAM(p, client.ccc_values_.count(kVaNameCharacteristic)
+                        ? client.ccc_values_.at(kVaNameCharacteristic) : 0);
+    UINT16_TO_STREAM(p, client.ccc_values_.count(kVaUuidCharacteristic)
+                        ? client.ccc_values_.at(kVaUuidCharacteristic) : 0);
+    UINT16_TO_STREAM(p, client.ccc_values_.count(kVasControlPointCharacteristic)
+                        ? client.ccc_values_.at(kVasControlPointCharacteristic) : 0);
+    UINT16_TO_STREAM(p, client.ccc_values_.count(kVaCcidCharacteristic)
+                        ? client.ccc_values_.at(kVaCcidCharacteristic) : 0);
+    UINT16_TO_STREAM(p, client.ccc_values_.count(kVaSessionStateCharacteristic)
+                        ? client.ccc_values_.at(kVaSessionStateCharacteristic) : 0);
+    UINT16_TO_STREAM(p, client.ccc_values_.count(kVaSupportedFeaturesCharacteristic)
+                        ? client.ccc_values_.at(kVaSupportedFeaturesCharacteristic) : 0);
+
+    UINT8_TO_STREAM(p, client.notified_ccid_);
+    UINT8_TO_STREAM(p, client.notified_session_state_);
+    UINT8_TO_STREAM(p, client.notified_supported_features_);
+    UINT8_TO_STREAM(p, client.notified_va_name_.length());
+
+    ARRAY_TO_STREAM(p, client.notified_va_name_.c_str(), client.notified_va_name_.length());
+    return data;
+  }
+
+  void DeserializeVapData(RemoteClient& client, const std::vector<uint8_t>& data) {
+    if (data.size() < 16) return;
+    const uint8_t* p = data.data();
+
+    STREAM_TO_UINT16(client.ccc_values_[kVaNameCharacteristic], p);
+    STREAM_TO_UINT16(client.ccc_values_[kVaUuidCharacteristic], p);
+    STREAM_TO_UINT16(client.ccc_values_[kVasControlPointCharacteristic], p);
+    STREAM_TO_UINT16(client.ccc_values_[kVaCcidCharacteristic], p);
+    STREAM_TO_UINT16(client.ccc_values_[kVaSessionStateCharacteristic], p);
+    STREAM_TO_UINT16(client.ccc_values_[kVaSupportedFeaturesCharacteristic], p);
+
+    STREAM_TO_UINT8(client.notified_ccid_, p);
+    STREAM_TO_UINT8(client.notified_session_state_, p);
+    STREAM_TO_UINT8(client.notified_supported_features_, p);
+
+    uint8_t name_len;
+    STREAM_TO_UINT8(name_len, p);
+
+    size_t offset = p - data.data();
+    if (data.size() >= offset + name_len) {
+      client.notified_va_name_ = std::string((const char*)p, name_len);
+      client.notified_va_uuid_ = client.notified_va_name_;
+    }
+  }
+
+  void SaveVapData(const RawAddress& bda) {
+    if (!com_android_bluetooth_flags_leaudio_vap_persistent_storage()) {
+      return;
+    }
+    if (remote_clients_.find(bda) != remote_clients_.end()) {
+      RemoteClient* client = &remote_clients_[bda];
+      if (!client->save_pending_) {
+        client->save_pending_ = true;
+        do_in_main_thread_delayed(
+            base::BindOnce(&VapServerImpl::ExecuteSaveVapData, base::Unretained(this), bda),
+            std::chrono::milliseconds(kSaveVapDataDelayMs));
+      }
+    }
+  }
+
+  void ExecuteSaveVapData(const RawAddress bda) {
+    if (remote_clients_.find(bda) != remote_clients_.end()) {
+      RemoteClient* client = &remote_clients_[bda];
+      client->save_pending_ = false;
+      std::vector<uint8_t> data = SerializeVapData(*client);
+      btif_storage_set_vap_server_data(bda, data);
+    }
+  }
+
   void do_cleanup() {
     if (!instance) {
       log::error("Not initialized");
@@ -311,19 +393,25 @@ public:
 
        uint16_t ccc_va_name = remote_client.ccc_values_[kVaNameCharacteristic];
        uint16_t ccc_va_uuid = remote_client.ccc_values_[kVaUuidCharacteristic];
+       bool changed = false;
        // Send VA Name notification
-       SendVaNameNotification(&remote_client, ccc_va_name, va_name);
+       changed |= SendVaNameNotification(&remote_client, ccc_va_name, va_name);
 
        // Send VA UUID notification
        // Using VA name bytes for VA UUID as we don't have an API from VA apps
-       SendVaUuidNotification(&remote_client, ccc_va_uuid, va_name);
+       changed |= SendVaUuidNotification(&remote_client, ccc_va_uuid, va_name);
 
        // Send VA Session State notification
        if (com_android_bluetooth_flags_leaudio_vap_multi_device_arbitration()) {
-         SendVaSessionStateNotification(bda, &remote_client, ccc_va_session_state,
+         changed |= SendVaSessionStateNotification(bda, &remote_client, ccc_va_session_state,
                                         va_session_state);
        } else {
-         SendVaSessionStateNotification(&remote_client, ccc_va_session_state, va_session_state);
+         changed |= SendVaSessionStateNotification(&remote_client, ccc_va_session_state,
+                                                   va_session_state);
+       }
+
+       if (changed) {
+         SaveVapData(bda);
        }
      }
      if (!com_android_bluetooth_flags_leaudio_vap_multi_device_arbitration()) {
@@ -379,8 +467,10 @@ public:
                uint8_t va_session_state =
                    static_cast<uint8_t>(VaSessionState::VA_SESSION_READY);
                // Send VA Session State notification
-               SendVaSessionStateNotification(device, remote_client, ccc_va_session_state,
-                   va_session_state, /*is_group_device*/ true);
+               if (SendVaSessionStateNotification(device, remote_client, ccc_va_session_state,
+                   va_session_state)) {
+                 SaveVapData(device);
+               }
              }
            }
          }
@@ -407,8 +497,10 @@ public:
                uint8_t va_session_state =
                    static_cast<uint8_t>(VaSessionState::VA_SESSION_READY);
                // Send VA Session State notification
-               SendVaSessionStateNotification(remote_client, ccc_va_session_state,
-                   va_session_state, /*is_group_device*/ true);
+               if (SendVaSessionStateNotification(remote_client, ccc_va_session_state,
+                   va_session_state)) {
+                 SaveVapData(device);
+               }
              }
            }
          }
@@ -441,8 +533,9 @@ public:
 
          uint8_t session_state = ComputeSessionState(true, is_success);
          // Send VA Session State notification
-         SendVaSessionStateNotification(remote_client, ccc_va_session_state, session_state,
-             /*is_group_device*/ true);
+         if (SendVaSessionStateNotification(remote_client, ccc_va_session_state, session_state)) {
+           SaveVapData(device);
+         }
        }
      }
    }
@@ -500,8 +593,9 @@ public:
 
          uint8_t session_state = ComputeSessionState(false, is_success);
          // Send VA Session State notification
-         SendVaSessionStateNotification(remote_client, ccc_va_session_state, session_state,
-             /*is_group_device*/ true);
+         if (SendVaSessionStateNotification(remote_client, ccc_va_session_state, session_state)) {
+           SaveVapData(device);
+         }
        }
      }
    }
@@ -561,13 +655,17 @@ public:
          }
 
          uint8_t session_state = ComputeSessionState(is_started, is_success);
+         bool changed = false;
          // Send VA Session State notification
          if (com_android_bluetooth_flags_leaudio_vap_multi_device_arbitration()) {
-           SendVaSessionStateNotification(device, remote_client, ccc_va_session_state,
-                                          session_state, /*is_group_device*/ true);
+           changed = SendVaSessionStateNotification(device, remote_client, ccc_va_session_state,
+                                                    session_state);
          } else {
-           SendVaSessionStateNotification(remote_client, ccc_va_session_state, session_state,
-                                          /*is_group_device*/ true);
+           changed = SendVaSessionStateNotification(remote_client, ccc_va_session_state,
+                                                    session_state);
+         }
+         if (changed) {
+           SaveVapData(device);
          }
        }
      }
@@ -610,20 +708,18 @@ public:
      return session_state;
    }
 
-   void SendVaSessionStateNotification(RemoteClient* remote_client,
+   bool SendVaSessionStateNotification(RemoteClient* remote_client,
                                        uint16_t ccc_va_session_state,
-                                       uint8_t va_session_state,
-                                       bool is_group_device = false) {
+                                       uint8_t va_session_state) {
      uint8_t curr_va_session_state = static_cast<uint8_t>(GetVaSessionState());
      log::info(" conn_id:{}, ccc_va_session_state:{}, Curr VA session state: {},"
-               " New VA session state:{}, is_group_device: {}", remote_client->conn_id_,
+               " New VA session state:{}", remote_client->conn_id_,
                ccc_va_session_state,
                GetVaSessionStateText(static_cast<VaSessionState>(curr_va_session_state)),
-               GetVaSessionStateText(static_cast<VaSessionState>(va_session_state)),
-               is_group_device);
-     if ((curr_va_session_state == va_session_state) && !is_group_device) {
+               GetVaSessionStateText(static_cast<VaSessionState>(va_session_state)));
+     if (remote_client->notified_session_state_ == va_session_state) {
        log::info(" Not sending VA Session state notification - no change in VA session state");
-       return;
+       return false;
      }
 
      SetVaSessionState(static_cast<VaSessionState>(va_session_state));
@@ -638,22 +734,22 @@ public:
        log::debug("Send VA Session State notification");
        BTA_GATTS_HandleValueIndication(remote_client->conn_id_, attr_id, value, !use_notification);
      }
+     remote_client->notified_session_state_ = va_session_state;
+     return true;
    }
 
-   void SendVaSessionStateNotification(const RawAddress& bda, RemoteClient* remote_client,
+   bool SendVaSessionStateNotification(const RawAddress& bda, RemoteClient* remote_client,
                                        uint16_t ccc_va_session_state,
-                                       uint8_t va_session_state,
-                                       bool is_group_device = false) {
+                                       uint8_t va_session_state) {
      uint8_t curr_va_session_state = static_cast<uint8_t>(GetVaSessionState(bda));
      log::info(" conn_id:{}, ccc_va_session_state:{}, Curr VA session state: {},"
-               " New VA session state:{}, is_group_device: {}", remote_client->conn_id_,
+               " New VA session state:{}", remote_client->conn_id_,
                ccc_va_session_state,
                GetVaSessionStateText(static_cast<VaSessionState>(curr_va_session_state)),
-               GetVaSessionStateText(static_cast<VaSessionState>(va_session_state)),
-               is_group_device);
-     if ((curr_va_session_state == va_session_state) && !is_group_device) {
+               GetVaSessionStateText(static_cast<VaSessionState>(va_session_state)));
+     if (remote_client->notified_session_state_ == va_session_state) {
        log::info(" Not sending VA Session state notification - no change in VA session state");
-       return;
+       return false;
      }
 
      SetVaSessionState(bda, static_cast<VaSessionState>(va_session_state));
@@ -668,14 +764,22 @@ public:
        log::debug("Send VA Session State notification");
        BTA_GATTS_HandleValueIndication(remote_client->conn_id_, attr_id, value, !use_notification);
      }
+
+     remote_client->notified_session_state_ = va_session_state;
+     return true;
    }
 
-   void SendVaNameNotification(RemoteClient* remote_client,
+   bool SendVaNameNotification(RemoteClient* remote_client,
                                uint16_t ccc_va_name,
                                std::string va_name) {
      log::info(" conn_id:{}, ccc_va_name:{}, VA name: {},",
                remote_client->conn_id_, ccc_va_name,
                va_name);
+     if (remote_client->notified_va_name_ == va_name) {
+       log::info(" Not sending VA Name notification - no change in VA name");
+       return false;
+     }
+
      if (ccc_va_name != GATT_CLT_CONFIG_NONE) {
        bool use_notification = ccc_va_name & GATT_CLT_CONFIG_NOTIFICATION;
        uint16_t attr_id =
@@ -685,12 +789,19 @@ public:
        log::debug("Send VA Name notification");
        BTA_GATTS_HandleValueIndication(remote_client->conn_id_, attr_id, value, !use_notification);
      }
+     remote_client->notified_va_name_ = va_name;
+     return true;
    }
 
-   void SendVaUuidNotification(RemoteClient* remote_client, uint16_t ccc_va_uuid,
+   bool SendVaUuidNotification(RemoteClient* remote_client, uint16_t ccc_va_uuid,
                               std::string va_uuid) {
      log::info(" conn_id:{}, ccc_va_uuid:{}, VA UUID: {},",
                remote_client->conn_id_, ccc_va_uuid, va_uuid);
+     if (remote_client->notified_va_uuid_ == va_uuid) {
+       log::info(" Not sending VA UUID notification - no change in VA UUID");
+       return false;
+     }
+
      if (ccc_va_uuid != GATT_CLT_CONFIG_NONE) {
        bool use_notification = ccc_va_uuid & GATT_CLT_CONFIG_NOTIFICATION;
        uint16_t attr_id =
@@ -701,6 +812,8 @@ public:
        log::debug("Send VA UUID notification");
        BTA_GATTS_HandleValueIndication(remote_client->conn_id_, attr_id, value, !use_notification);
      }
+     remote_client->notified_va_uuid_ = va_uuid;
+     return true;
    }
 
    void OnGattConnect(const RawAddress& remote_bda, tCONN_ID conn_id, tBT_TRANSPORT transport) {
@@ -742,6 +855,101 @@ public:
          SetVaSessionState(VaSessionState::VA_SESSION_RESET);
        }
      }
+
+     if (!com_android_bluetooth_flags_leaudio_vap_persistent_storage()) {
+       return;
+     }
+
+     std::vector<uint8_t> data;
+     if (btif_storage_get_vap_server_data(remote_bda, data)) {
+       DeserializeVapData(remote_clients_[remote_bda], data);
+     }
+
+     RemoteClient* client = &remote_clients_[remote_bda];
+
+     bool changed = false;
+     if (client->notified_va_name_ != va_name_) {
+       changed |= SendVaNameNotification(client, client->ccc_values_[kVaNameCharacteristic],
+                                         va_name_);
+       changed |= SendVaUuidNotification(client, client->ccc_values_[kVaUuidCharacteristic],
+                                         va_name_);
+     }
+
+     if (client->notified_ccid_ != kVapCcid) {
+       changed |= SendVaCcidNotification(client, client->ccc_values_[kVaCcidCharacteristic],
+                                         kVapCcid);
+     }
+
+     if (client->notified_supported_features_ != kVaSupportedFeatures) {
+       changed |= SendVaSupportedFeaturesNotification(
+           client, client->ccc_values_[kVaSupportedFeaturesCharacteristic], kVaSupportedFeatures);
+     }
+
+     uint8_t curr_va_session_state;
+     if (com_android_bluetooth_flags_leaudio_vap_multi_device_arbitration()) {
+       curr_va_session_state = static_cast<uint8_t>(GetVaSessionState(remote_bda));
+       if (client->notified_session_state_ != curr_va_session_state) {
+         changed |= SendVaSessionStateNotification(
+             remote_bda, client, client->ccc_values_[kVaSessionStateCharacteristic],
+             curr_va_session_state);
+       }
+     } else {
+       curr_va_session_state = static_cast<uint8_t>(GetVaSessionState());
+       if (client->notified_session_state_ != curr_va_session_state) {
+         changed |= SendVaSessionStateNotification(
+             client, client->ccc_values_[kVaSessionStateCharacteristic], curr_va_session_state);
+       }
+     }
+
+     if (changed) {
+       SaveVapData(remote_bda);
+     }
+   }
+
+   bool SendVaCcidNotification(RemoteClient* remote_client, uint16_t ccc_va_ccid,
+                               uint8_t ccid) {
+     log::info(" conn_id:{}, ccc_va_ccid:{}, CCID: {},",
+               remote_client->conn_id_, ccc_va_ccid, ccid);
+     if (remote_client->notified_ccid_ == ccid) {
+       log::info(" Not sending VA CCID notification - no change in VA CCID");
+       return false;
+     }
+
+     if (ccc_va_ccid != GATT_CLT_CONFIG_NONE) {
+       bool use_notification = ccc_va_ccid & GATT_CLT_CONFIG_NOTIFICATION;
+       uint16_t attr_id =
+               GetCharacteristic(kVaCcidCharacteristic)->attribute_handle_;
+       std::vector<uint8_t> value = {ccid};
+
+       log::debug("Send VA CCID notification");
+       BTA_GATTS_HandleValueIndication(remote_client->conn_id_, attr_id, value, !use_notification);
+     }
+     remote_client->notified_ccid_ = ccid;
+     return true;
+   }
+
+   bool SendVaSupportedFeaturesNotification(RemoteClient* remote_client,
+                                            uint16_t ccc_va_supported_features,
+                                            uint8_t supported_features) {
+     log::info(" conn_id:{}, ccc_va_supported_features:{}, Supported Features: {},",
+               remote_client->conn_id_, ccc_va_supported_features, supported_features);
+     if (remote_client->notified_supported_features_ == supported_features) {
+       log::info(" Not sending VA Supported Features notification "
+                 "- no change in VA Supported Features");
+       return false;
+     }
+
+     if (ccc_va_supported_features != GATT_CLT_CONFIG_NONE) {
+       bool use_notification = ccc_va_supported_features & GATT_CLT_CONFIG_NOTIFICATION;
+       uint16_t attr_id =
+               GetCharacteristic(kVaSupportedFeaturesCharacteristic)->attribute_handle_;
+       std::vector<uint8_t> value = {supported_features};
+
+       log::debug("Send VA Supported Features notification");
+       BTA_GATTS_HandleValueIndication(remote_client->conn_id_, attr_id, value, !use_notification);
+     }
+     remote_client->notified_supported_features_ = supported_features;
+     return true;
    }
 
    void OnGattMtuChanged(tCONN_ID /*conn_id*/, const RawAddress& remote_bda, uint16_t mtu) {
@@ -966,9 +1174,18 @@ public:
      uint16_t ccc_value;
      STREAM_TO_UINT16(ccc_value, value);
 
-     remote_clients_[remote_bda].ccc_values_[characteristic->uuid_] = ccc_value;
-     log::info("Write CCC for {}, conn_id:{}, value:0x{:04x}", getUuidName(characteristic->uuid_),
-               conn_id, ccc_value);
+     uint16_t current_ccc = 0;
+     if (remote_clients_[remote_bda].ccc_values_.count(characteristic->uuid_)) {
+       current_ccc = remote_clients_[remote_bda].ccc_values_[characteristic->uuid_];
+     }
+
+     if (current_ccc != ccc_value) {
+       remote_clients_[remote_bda].ccc_values_[characteristic->uuid_] = ccc_value;
+       log::info("Write CCC for {}, conn_id:{}, value:0x{:04x}", getUuidName(characteristic->uuid_),
+                 conn_id, ccc_value);
+       SaveVapData(remote_bda);
+     }
+
      BTA_GATTS_SendRsp(conn_id, trans_id, GATT_SUCCESS, std::move(p_msg));
    }
 
@@ -1058,10 +1275,12 @@ public:
                bool is_old_group = (old_group_id != bluetooth::groups::kGroupUnknown &&
                                     GetGroupId(other_bda) == old_group_id);
                if (is_old_device || is_old_group) {
-                 SendVaSessionStateNotification(
+                 if (SendVaSessionStateNotification(
                      other_bda, &client,
                      client.ccc_values_[kVaSessionStateCharacteristic],
-                     static_cast<uint8_t>(VaSessionState::VA_SESSION_READY), true);
+                     static_cast<uint8_t>(VaSessionState::VA_SESSION_READY))) {
+                   SaveVapData(other_bda);
+                 }
                }
              }
 
@@ -1126,10 +1345,16 @@ public:
 
        uint8_t va_session_state = static_cast<uint8_t>(state);
        // Send VA Session State notification
+       bool changed = false;
        if (com_android_bluetooth_flags_leaudio_vap_multi_device_arbitration()) {
-         SendVaSessionStateNotification(bda, remote_client, ccc_va_session_state, va_session_state);
+         changed = SendVaSessionStateNotification(bda, remote_client, ccc_va_session_state,
+                                                  va_session_state);
        } else {
-         SendVaSessionStateNotification(remote_client, ccc_va_session_state, va_session_state);
+         changed = SendVaSessionStateNotification(remote_client, ccc_va_session_state,
+                                                  va_session_state);
+       }
+       if (changed) {
+         SaveVapData(bda);
        }
      }
    }
