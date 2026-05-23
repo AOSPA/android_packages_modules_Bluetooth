@@ -210,15 +210,15 @@ constructor(
 
     @VisibleForTesting
     fun shouldRejectVaSession(device: BluetoothDevice): Boolean {
+        if (!Flags.leaudioVapMultiDeviceArbitration()) {
+            return false
+        }
+
         // HFP Parity: Reject VA requests if the user is currently on a phone call.
         val telecomManager = getSystemService(android.telecom.TelecomManager::class.java)
         if (telecomManager != null && telecomManager.isInCall) {
             Log.w(TAG, "start VA session rejected: User is in an active phone call")
             return true
-        }
-
-        if (!Flags.leaudioVapMultiDeviceArbitration()) {
-            return false
         }
 
         val leAudioService = adapterService.getLeAudioService().orElse(null)
