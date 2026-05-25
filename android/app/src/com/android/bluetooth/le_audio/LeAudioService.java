@@ -5134,6 +5134,13 @@ public class LeAudioService extends ConnectableProfile {
             return;
         }
         if (getActiveGroupId() != LE_AUDIO_GROUP_ID_INVALID) {
+            if (Utils.isDualModeAudioEnabled() &&
+                    getGroupId(hfpHandoverDevice) == getActiveGroupId()) {
+                Log.i(TAG, "setInactiveForHfpHandover: Skip LE Audio deactivation,"
+                        + "as dual mode is enabled" + " hfpDevice=" + hfpHandoverDevice
+                        + " activeGroupId=" + getActiveGroupId());
+                return;
+            }
             mHfpHandoverDevice = hfpHandoverDevice;
             // record the lead device
             mLeAudioDeviceInactivatedForHfpHandover = mExposedActiveDevice;
