@@ -39,6 +39,7 @@
 #include "gd/os/rand.h"
 #include "btif/include/btif_profile_storage.h"
 #include "hardware/bt_common_types.h"
+#include "internal_include/stack_config.h"
 #include "main/shim/entry.h"
 #include "stack/include/bt_types.h"
 #include "stack/include/btm_ble_addr.h"
@@ -59,6 +60,8 @@ VapServerImpl* instance;
 
 static uint8_t kVapCcid = 0;
 static uint8_t kVaSupportedFeatures = 0;
+static uint8_t kPtsVapCcid = 0;
+static uint8_t kPtsVaSupportedFeatures = 0;
 static uint8_t kVaSessionFlag = 0;
 static std::string kVaSupportedLanguages = "";
 
@@ -375,6 +378,31 @@ public:
     log::info("cleanup done");
   }
 
+  void NotifyVaSupportedFeaturesForPts(RawAddress bda, uint8_t features) {
+     log::info("bda: {}, features: {}", bda, features);
+
+     auto it = remote_clients_.find(bda);
+     if (it != remote_clients_.end()) {
+       RemoteClient* remote_client = &it->second;
+       uint16_t ccc_va_supported_features =
+           remote_client->ccc_values_[kVaSupportedFeaturesCharacteristic];
+
+       SendVaSupportedFeaturesNotification(remote_client, ccc_va_supported_features, features);
+     }
+   }
+
+   void NotifyVaCcidForPts(RawAddress bda, uint8_t ccid) {
+     log::info("bda: {}, ccid: {}", bda, ccid);
+
+     auto it = remote_clients_.find(bda);
+     if (it != remote_clients_.end()) {
+       RemoteClient* remote_client = &it->second;
+       uint16_t ccc_va_ccid = remote_client->ccc_values_[kVaCcidCharacteristic];
+
+       SendVaCcidNotification(remote_client, ccc_va_ccid, ccid);
+     }
+   }
+
    void set_ccid(int ccid) {
      log::info("ccid:{}", ccid);
      kVapCcid = ccid;
@@ -438,8 +466,9 @@ public:
      bool is_success = true;
      log::info("NotifyVaSessionInitialized:, bda", bda);
 
-     if (remote_clients_.find(bda) != remote_clients_.end()) {
-       RemoteClient* remote_client = &remote_clients_[bda];
+     auto it = remote_clients_.find(bda);
+     if (it != remote_clients_.end()) {
+       RemoteClient* remote_client = &it->second;
        uint16_t ccc_vas_control_point = remote_client->ccc_values_[kVasControlPointCharacteristic];
        ResponseCodeValue rsp_code_value =
            is_success ? ResponseCodeValue::SUCCESS : ResponseCodeValue::OPERATION_FALIED;
@@ -459,8 +488,9 @@ public:
 
            for (const auto& device : devices) {
              log::info("NotifyVaSessionInitialized:, device:{}", device);
-             if (remote_clients_.find(device) != remote_clients_.end()) {
-               RemoteClient* remote_client = &remote_clients_[device];
+             auto it = remote_clients_.find(device);
+             if (it != remote_clients_.end()) {
+               RemoteClient* remote_client = &it->second;
                uint16_t ccc_va_session_state =
                    remote_client->ccc_values_[kVaSessionStateCharacteristic];
 
@@ -489,8 +519,9 @@ public:
 
            for (const auto& device : devices) {
              log::info("NotifyVaSessionInitialized:, device:{}", device);
-             if (remote_clients_.find(device) != remote_clients_.end()) {
-               RemoteClient* remote_client = &remote_clients_[device];
+             auto it = remote_clients_.find(device);
+             if (it != remote_clients_.end()) {
+               RemoteClient* remote_client = &it->second;
                uint16_t ccc_va_session_state =
                    remote_client->ccc_values_[kVaSessionStateCharacteristic];
 
@@ -518,8 +549,9 @@ public:
 
      for (const auto& device : devices) {
        log::info("NotifyVaSessionStarted:, device:{}", device);
-       if (remote_clients_.find(device) != remote_clients_.end()) {
-         RemoteClient* remote_client = &remote_clients_[device];
+       auto it = remote_clients_.find(device);
+       if (it != remote_clients_.end()) {
+         RemoteClient* remote_client = &it->second;
          uint16_t ccc_vas_control_point =
                  remote_client->ccc_values_[kVasControlPointCharacteristic];
          uint16_t ccc_va_session_state =
@@ -578,8 +610,9 @@ public:
      log::debug(" Number of devices: {}", devices.size());
 
      for (const auto& device : devices) {
-       if (remote_clients_.find(device) != remote_clients_.end()) {
-         RemoteClient* remote_client = &remote_clients_[device];
+       auto it = remote_clients_.find(device);
+       if (it != remote_clients_.end()) {
+         RemoteClient* remote_client = &it->second;
          uint16_t ccc_vas_control_point =
                  remote_client->ccc_values_[kVasControlPointCharacteristic];
          uint16_t ccc_va_session_state =
@@ -641,8 +674,9 @@ public:
      log::debug(" Number of devices: {}", devices.size());
 
      for (const auto& device : devices) {
-       if (remote_clients_.find(device) != remote_clients_.end()) {
-         RemoteClient* remote_client = &remote_clients_[device];
+       auto it = remote_clients_.find(device);
+       if (it != remote_clients_.end()) {
+         RemoteClient* remote_client = &it->second;
          uint16_t ccc_vas_control_point =
                  remote_client->ccc_values_[kVasControlPointCharacteristic];
          uint16_t ccc_va_session_state =
@@ -1187,6 +1221,18 @@ public:
      }
 
      BTA_GATTS_SendRsp(conn_id, trans_id, GATT_SUCCESS, std::move(p_msg));
+
+     if (characteristic->uuid_ == kVaSupportedFeaturesCharacteristic &&
+         bluetooth::common::IsPtsTestMode() &&
+         stack_config_get_interface()->get_pts_vap_notify_characteristics()) {
+       kPtsVaSupportedFeatures++;
+       NotifyVaSupportedFeaturesForPts(remote_bda, kPtsVaSupportedFeatures);
+     } else if (characteristic->uuid_ == kVaCcidCharacteristic &&
+                bluetooth::common::IsPtsTestMode() &&
+                stack_config_get_interface()->get_pts_vap_notify_characteristics()) {
+       kPtsVapCcid++;
+       NotifyVaCcidForPts(remote_bda, kPtsVapCcid);
+     }
    }
 
    void DebugDump(int fd) {
@@ -1334,8 +1380,9 @@ public:
    void NotifyVaSessionStateForPts(RawAddress bda, VaSessionState state) {
      log::info("bda: {}, state: {}", bda, static_cast<int>(state));
 
-     if (remote_clients_.find(bda) != remote_clients_.end()) {
-       RemoteClient* remote_client = &remote_clients_[bda];
+     auto it = remote_clients_.find(bda);
+     if (it != remote_clients_.end()) {
+       RemoteClient* remote_client = &it->second;
        uint16_t ccc_vas_control_point = remote_client->ccc_values_[kVasControlPointCharacteristic];
        uint16_t ccc_va_session_state = remote_client->ccc_values_[kVaSessionStateCharacteristic];
        ResponseCodeValue rsp_code_value = ResponseCodeValue::SUCCESS;
