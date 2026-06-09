@@ -395,138 +395,9 @@ using namespace bluetooth;
 
 constexpr int kNumberOfCisRetries = 2;
 
-struct CigQosConfig {
-  uint32_t sdu_interval_c_to_p;
-  uint32_t sdu_interval_p_to_c;
-  uint16_t max_trans_lat_c_to_p;
-  uint16_t max_trans_lat_p_to_c;
-  uint8_t packing;
-  uint8_t framing;
-  uint8_t sca;
-  uint8_t phy_c_to_p;
-  uint8_t phy_p_to_c;
-  uint16_t max_sdu_size_c_to_p;
-  uint16_t max_sdu_size_p_to_c;
-  uint8_t rtn_c_to_p;
-  uint8_t rtn_p_to_c;
-};
-
-static bool isIntervalAndLatencyProperlySet(uint32_t sdu_interval_us, uint16_t max_latency_ms) {
-  log::verbose("sdu_interval_us: {}, max_latency_ms: {}", sdu_interval_us, max_latency_ms);
-
-  if (sdu_interval_us == 0) {
-    return max_latency_ms == bluetooth::le_audio::types::kMaxTransportLatencyMin;
-  }
-  return true;// skipping this as this is spec violation(1000 * max_latency_ms) >= sdu_interval_us;
-}
-
-static std::optional<CigQosConfig> GetCigQosConfig(LeAudioDeviceGroup* group) {
-  CigQosConfig config{};
-  config.sdu_interval_c_to_p =
-          group->GetSduInterval(bluetooth::le_audio::types::kLeAudioDirectionSink);
-  config.sdu_interval_p_to_c =
-          group->GetSduInterval(bluetooth::le_audio::types::kLeAudioDirectionSource);
-  config.sca = group->GetSCA();
-  config.packing = group->GetPacking();
-  config.framing = group->GetFraming();
-  config.max_trans_lat_c_to_p = group->GetMaxTransportLatencyCToP();
-  config.max_trans_lat_p_to_c = group->GetMaxTransportLatencyPToC();
-
-  if (!isIntervalAndLatencyProperlySet(config.sdu_interval_c_to_p, config.max_trans_lat_c_to_p) ||
-      !isIntervalAndLatencyProperlySet(config.sdu_interval_p_to_c, config.max_trans_lat_p_to_c)) {
-    log::error("Latency and interval not properly set");
-    group->PrintDebugState();
-    return std::nullopt;
-  }
-
-  config.phy_c_to_p = group->GetPhyBitmask(bluetooth::le_audio::types::kLeAudioDirectionSink);
-  config.phy_p_to_c = group->GetPhyBitmask(bluetooth::le_audio::types::kLeAudioDirectionSource);
-
-  // Check if HDT PHY is selected in either direction and ensure symmetric PHY
-  log::info(" phy_c_to_p: {}", config.phy_c_to_p);
-  if ((config.phy_c_to_p & bluetooth::hci::kIsoCigPhyHdt) &&
-        le_audio::utils::isContextForHDT(group->GetConfigurationContextType())) {
-    // If mtos has HDT, copy mtos PHY to stom for symmetric configuration
-    config.phy_p_to_c = config.phy_c_to_p;
-    log::info("HDT PHY selected in mtos, using symmetric PHY: mtos=0x{:02x}, stom=0x{:02x}",
-              config.phy_c_to_p, config.phy_p_to_c);
-  } else {
-    // Use 1M Phy for the ACK packet from remote device to phone for better
-    // sensitivity
-    if (group->asymmetric_phy_for_unidirectional_cis_supported && config.sdu_interval_p_to_c == 0 &&
-        (config.phy_p_to_c & bluetooth::hci::kIsoCigPhy1M) != 0) {
-      log::info("Use asymmetric PHY for unidirectional CIS");
-      config.phy_p_to_c = bluetooth::hci::kIsoCigPhy1M;
-    }
-  }
-
-  config.max_sdu_size_c_to_p = 0;
-  config.max_sdu_size_p_to_c = 0;
-  config.rtn_c_to_p = 0;
-  config.rtn_p_to_c = 0;
-
-  /* Currently assumed Sink/Source configuration is same across cis types.
-   * If a cis in cises_ is currently associated with active device/ASE(s),
-   * use the Sink/Source configuration for the same.
-   * If a cis in cises_ is not currently associated with active device/ASE(s),
-   * use the Sink/Source configuration for the cis in cises_
-   * associated with a active device/ASE(s). When the same cis is associated
-   * later, with active device/ASE(s), check if current configuration is
-   * supported or not, if not, reconfigure CIG.
-   */
-  for (const auto& cis : group->cig.GetCises()) {
-    uint16_t max_sdu_size_c_to_p_temp =
-            group->GetMaxSduSize(bluetooth::le_audio::types::kLeAudioDirectionSink, cis.id);
-    uint16_t max_sdu_size_p_to_c_temp =
-            group->GetMaxSduSize(bluetooth::le_audio::types::kLeAudioDirectionSource, cis.id);
-    uint8_t rtn_c_to_p_temp =
-            group->GetRtn(bluetooth::le_audio::types::kLeAudioDirectionSink, cis.id);
-    uint8_t rtn_p_to_c_temp =
-            group->GetRtn(bluetooth::le_audio::types::kLeAudioDirectionSource, cis.id);
-
-    config.max_sdu_size_c_to_p =
-            max_sdu_size_c_to_p_temp ? max_sdu_size_c_to_p_temp : config.max_sdu_size_c_to_p;
-    config.max_sdu_size_p_to_c =
-            max_sdu_size_p_to_c_temp ? max_sdu_size_p_to_c_temp : config.max_sdu_size_p_to_c;
-    config.rtn_c_to_p = rtn_c_to_p_temp ? rtn_c_to_p_temp : config.rtn_c_to_p;
-    config.rtn_p_to_c = rtn_p_to_c_temp ? rtn_p_to_c_temp : config.rtn_p_to_c;
-  }
-
-  /* Make sure, the parameters makes sense and CIG which is about to be created is useful in any
-   * sense. e.g. Any direction is enabled, there is no logical mistakes in the parameters.
-   */
-  bool no_direction_enabled_due_to_sdu_interval =
-          (config.sdu_interval_c_to_p == 0 && config.sdu_interval_p_to_c == 0);
-  bool no_direction_enabled_due_max_latencies_setting =
-          (config.max_trans_lat_c_to_p == bluetooth::le_audio::types::kMaxTransportLatencyMin &&
-           config.max_trans_lat_p_to_c == bluetooth::le_audio::types::kMaxTransportLatencyMin);
-  bool no_direction_enabled_due_max_sdu_sizes_zero =
-          (config.max_sdu_size_c_to_p == 0 && config.max_sdu_size_p_to_c == 0);
-
-  /* The mismatch where one of the sdu size or sdu interval is 0 while the other parameter is 0 is
-   * a non-sense configuration. We should catch that and avoid creating such a CIG.
-   */
-  bool is_sdu_config_mismatch_fix_enabled =
-          com_android_bluetooth_flags_leaudio_fix_clear_cises_in_the_cig();
-  bool is_c_to_p_sdu_config_mismatched =
-          ((config.max_sdu_size_c_to_p == 0) != (config.sdu_interval_c_to_p == 0));
-  bool is_p_to_c_sdu_config_mismatched =
-          ((config.max_sdu_size_p_to_c == 0) != (config.sdu_interval_p_to_c == 0));
-
-  if (no_direction_enabled_due_to_sdu_interval || no_direction_enabled_due_max_latencies_setting ||
-      no_direction_enabled_due_max_sdu_sizes_zero ||
-      (is_sdu_config_mismatch_fix_enabled &&
-       (is_c_to_p_sdu_config_mismatched || is_p_to_c_sdu_config_mismatched))) {
-    log::error("Trying to create invalid group");
-    group->PrintDebugState();
-    return std::nullopt;
-  }
-
-  return config;
-}
-
 template <typename T>
-static std::vector<T> BuildCisConfigs(LeAudioDeviceGroup* group, const CigQosConfig& qos_config) {
+static std::vector<T> BuildCisConfigs(LeAudioDeviceGroup* group,
+                                      const bluetooth::le_audio::types::CigQosConfig& qos_config) {
   std::vector<T> cis_cfgs;
   for (const auto& cis : group->cig.GetCises()) {
     T cis_cfg = {};
@@ -2518,7 +2389,7 @@ private:
       return false;
     }
 
-    auto qos_config = GetCigQosConfig(group);
+    auto qos_config = group->GetActiveCigQosConfig();
     if (!qos_config) {
       return false;
     }

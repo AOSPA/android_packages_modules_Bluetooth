@@ -1179,6 +1179,22 @@ constexpr LeAudioCodecId kLeAudioCodecHeadtracking = {kLeAudioCodingFormatVendor
                                                       kLeAudioVendorCompanyIdGoogle,
                                                       kLeAudioVendorCodecIdHeadtracking};
 
+struct CigQosConfig {
+  uint32_t sdu_interval_c_to_p;
+  uint32_t sdu_interval_p_to_c;
+  uint16_t max_trans_lat_c_to_p;
+  uint16_t max_trans_lat_p_to_c;
+  uint8_t packing;
+  uint8_t framing;
+  uint8_t sca;
+  uint8_t phy_c_to_p;
+  uint8_t phy_p_to_c;
+  uint16_t max_sdu_size_c_to_p;
+  uint16_t max_sdu_size_p_to_c;
+  uint8_t rtn_c_to_p;
+  uint8_t rtn_p_to_c;
+};
+
 struct IsoDataPathConfiguration {
   types::LeAudioCodecId codecId = {0, 0, 0};
   bool isTransparent = true;
