@@ -257,7 +257,7 @@ void CigCallbacksShim::OnCisEvent(uint8_t event, void* data) {
               evt->status, evt->cig_id, evt->cis_conn_hdl, evt->cig_sync_delay, evt->cis_sync_delay,
               evt->trans_lat_c_to_p, evt->trans_lat_p_to_c, evt->phy_c_to_p, evt->phy_p_to_c,
               evt->nse, evt->bn_c_to_p, evt->bn_p_to_c, evt->ft_c_to_p, evt->ft_p_to_c,
-              evt->max_pdu_c_to_p, evt->max_pdu_p_to_c, evt->iso_itv);
+              evt->max_pdu_c_to_p, evt->max_pdu_p_to_c, evt->iso_interval);
       break;
     }
     case kIsoEventCisDisconnected: {

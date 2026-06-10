@@ -1228,7 +1228,7 @@ struct iso_impl {
     STREAM_TO_UINT8(evt.ft_p_to_c, data);
     STREAM_TO_UINT16(evt.max_pdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_pdu_p_to_c, data);
-    STREAM_TO_UINT16(evt.iso_itv, data);
+    STREAM_TO_UINT16(evt.iso_interval, data);
     // New parameters from v4 of LE CIS Established event
     // TODO: Remove this when corestack adds V4 function separately
     if(hdt_enabled && shim::GetController()->SupportsBleHDTPhy()) {
@@ -1328,7 +1328,7 @@ struct iso_impl {
     STREAM_TO_UINT8(evt.ft_p_to_c, data);
     STREAM_TO_UINT16(evt.max_pdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_pdu_p_to_c, data);
-    STREAM_TO_UINT16(evt.iso_itv, data);
+    STREAM_TO_UINT16(evt.iso_interval, data);
     STREAM_TO_UINT24(evt.sub_itv, data);
     STREAM_TO_UINT16(evt.max_sdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_sdu_p_to_c, data);
@@ -1418,7 +1418,7 @@ struct iso_impl {
     STREAM_TO_UINT8(evt.ft_p_to_c, data);
     STREAM_TO_UINT16(evt.max_pdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_pdu_p_to_c, data);
-    STREAM_TO_UINT16(evt.iso_itv, data);
+    STREAM_TO_UINT16(evt.iso_interval, data);
     STREAM_TO_UINT24(evt.sub_itv, data);
     STREAM_TO_UINT16(evt.max_sdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_sdu_p_to_c, data);

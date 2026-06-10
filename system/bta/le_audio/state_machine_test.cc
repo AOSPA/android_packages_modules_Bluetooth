@@ -696,7 +696,7 @@ protected:
                     evt.ft_p_to_c = 0;
                     evt.max_pdu_c_to_p = 0;
                     evt.max_pdu_p_to_c = 0;
-                    evt.iso_itv = 0;
+                    evt.iso_interval = 0;
 
                     InjectHciNotifyCisEstablished(group.get(), dev_it->get(), evt);
 

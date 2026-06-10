@@ -148,7 +148,7 @@ struct cis_establish_cmpl_evt {
   uint8_t ft_p_to_c;
   uint16_t max_pdu_c_to_p;
   uint16_t max_pdu_p_to_c;
-  uint16_t iso_itv;
+  uint16_t iso_interval;
   uint16_t sub_itv;
   uint16_t max_sdu_c_to_p;
   uint16_t max_sdu_p_to_c;
