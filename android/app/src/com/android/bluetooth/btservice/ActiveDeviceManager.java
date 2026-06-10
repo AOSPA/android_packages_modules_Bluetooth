@@ -2064,17 +2064,17 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
                 Log.i(TAG, "Found an A2DP fallback device: " + device + ", going for Music" +
                            "player pause");
                 setA2dpActiveDevice(null, /* stopAudio= */ false);
+                /* Clear LE Audio active device before setting A2DP fallback to ensure
+                 * AudioPolicyService processes the LE Audio removal first.*/
+                if (!Utils.isDualModeAudioEnabled()) {
+                    setLeAudioActiveDevice(null, /* stopAudio= */ true);
+                }
                 Log.d(TAG, "Setting A2DP fallback device as the Active Device");
                 setA2dpActiveDevice(device, /* stopAudio= */ true);
                 if (Objects.equals(headsetFallbackDevice, device)) {
                     setHfpActiveDevice(device);
                 } else {
                     setHfpActiveDevice(null);
-                }
-                /* If dual mode is enabled, LEA will be made active once all supported
-                classic audio profiles are made active for the device. */
-                if (!Utils.isDualModeAudioEnabled()) {
-                    setLeAudioActiveDevice(null, /* stopAudio= */ false);
                 }
                 setHearingAidActiveDevice(null, /* stopAudio= */ false);
             } else {
