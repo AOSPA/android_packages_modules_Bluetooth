@@ -2306,7 +2306,7 @@ private:
   void ApplyDsaParams(LeAudioDeviceGroup* group,
                       bluetooth::hci::iso_manager::cig_create_params& param) {
     /* Ignore bidirectional streaming */
-    if (param.sdu_itv_p_to_c != 0) {
+    if (param.sdu_interval_p_to_c != 0) {
       log::debug("Bidirection streaming, ignore DSA mode {}", group->dsa_.mode);
       return;
     }
@@ -2340,19 +2340,20 @@ private:
           if (config->hasDsaBackChannel()) {
             auto const& cfg = config->confs.source.at(0);
 
-            param.sdu_itv_p_to_c = cfg.qos.sduIntervalUs;
+            param.sdu_interval_p_to_c = cfg.qos.sduIntervalUs;
             param.max_trans_lat_p_to_c = cfg.qos.max_transport_latency;
             it->max_sdu_size_p_to_c = cfg.qos.maxSdu;
             it->rtn_p_to_c = cfg.qos.retransmission_number;
 
             log::debug(
-                    "Applying DSA Cig parameters: sdu_itv_p_to_c:{}, max_trans_lat_p_to_c: {}, "
+                    "Applying DSA Cig parameters: sdu_interval_p_to_c:{}, max_trans_lat_p_to_c: "
+                    "{}, "
                     "max_sdu_size_p_to_c: {}, rtn_p_to_c: {}",
-                    param.sdu_itv_p_to_c, param.max_trans_lat_p_to_c, it->max_sdu_size_p_to_c,
+                    param.sdu_interval_p_to_c, param.max_trans_lat_p_to_c, it->max_sdu_size_p_to_c,
                     it->rtn_p_to_c);
           } else {
             log::warn("Fallback to static DSA configuration for group: {}", group->group_id_);
-            param.sdu_itv_p_to_c = bluetooth::le_audio::types::kLeAudioHeadtrackerSduItv;
+            param.sdu_interval_p_to_c = bluetooth::le_audio::types::kLeAudioHeadtrackerSduInterval;
             param.max_trans_lat_p_to_c = bluetooth::le_audio::types::kLeAudioHeadtrackerMaxTransLat;
             it->max_sdu_size_p_to_c = bluetooth::le_audio::types::kLeAudioHeadtrackerMaxSduSize;
 
@@ -2395,8 +2396,8 @@ private:
     }
 
     bluetooth::hci::iso_manager::cig_create_params param = {
-            .sdu_itv_c_to_p = qos_config->sdu_interval_c_to_p,
-            .sdu_itv_p_to_c = qos_config->sdu_interval_p_to_c,
+            .sdu_interval_c_to_p = qos_config->sdu_interval_c_to_p,
+            .sdu_interval_p_to_c = qos_config->sdu_interval_p_to_c,
             .sca = qos_config->sca,
             .packing = qos_config->packing,
             .framing = qos_config->framing,

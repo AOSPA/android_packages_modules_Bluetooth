@@ -79,8 +79,8 @@ void IsoManagerShim::CreateCig(uint8_t cig_id, uint32_t sdu_interval_c_to_p,
   }
 
   cig_create_params cpp_params{
-          .sdu_itv_c_to_p = sdu_interval_c_to_p,
-          .sdu_itv_p_to_c = sdu_interval_p_to_c,
+          .sdu_interval_c_to_p = sdu_interval_c_to_p,
+          .sdu_interval_p_to_c = sdu_interval_p_to_c,
           .sca = worse_cast_sca,
           .packing = static_cast<uint8_t>(packing),
           .framing = static_cast<uint8_t>(framing),
@@ -115,8 +115,8 @@ void IsoManagerShim::ReconfigureCig(uint8_t cig_id, uint32_t sdu_interval_c_to_p
   }
 
   cig_create_params cpp_params{
-          .sdu_itv_c_to_p = sdu_interval_c_to_p,
-          .sdu_itv_p_to_c = sdu_interval_p_to_c,
+          .sdu_interval_c_to_p = sdu_interval_c_to_p,
+          .sdu_interval_p_to_c = sdu_interval_p_to_c,
           .sca = worse_cast_sca,
           .packing = static_cast<uint8_t>(packing),
           .framing = static_cast<uint8_t>(framing),
@@ -155,7 +155,7 @@ void IsoManagerShim::CreateBig(uint8_t big_handle, uint8_t advertising_handle, u
   big_create_params cpp_params{
           .adv_handle = advertising_handle,
           .num_bis = num_bis,
-          .sdu_itv = sdu_interval,
+          .sdu_interval = sdu_interval,
           .max_sdu_size = max_sdu_size,
           .max_transport_latency = max_transport_latency,
           .rtn = rtn,

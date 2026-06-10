@@ -95,7 +95,7 @@ struct iso_stream {
 
   struct iso_sync_info sync_info;
   std::atomic_uint16_t state_flags;
-  uint32_t sdu_itv;
+  uint32_t sdu_interval;
   std::atomic_uint16_t used_credits;
 
   struct credits_stats {
@@ -358,7 +358,8 @@ struct iso_impl {
     }
   }
 
-  void on_set_cig_params(uint8_t cig_id, uint32_t sdu_itv_c_to_p, uint8_t* stream, uint16_t len) {
+  void on_set_cig_params(uint8_t cig_id, uint32_t sdu_interval_c_to_p, uint8_t* stream,
+                         uint16_t len) {
     uint8_t cis_cnt;
     uint16_t conn_handle;
     cig_create_cmpl_evt evt;
@@ -403,7 +404,7 @@ struct iso_impl {
         auto stream_ptr = std::make_unique<iso_stream>();
         stream_ptr->conn_handle = conn_handle;
         stream_ptr->group_id = cig_id;
-        stream_ptr->sdu_itv = sdu_itv_c_to_p;
+        stream_ptr->sdu_interval = sdu_interval_c_to_p;
         stream_ptr->sync_info = {.tx_seq_nb = 0, .rx_seq_nb = 0};
         stream_ptr->used_credits = 0;
         stream_ptr->state_flags = kStateFlagsNone;
@@ -446,18 +447,18 @@ struct iso_impl {
     bool hdt_enabled = osi_property_get_bool("persist.vendor.qcom.bluetooth.hdt.enabled", false);
     if(isPhyHdt && hdt_enabled && shim::GetController()->SupportsBleHDTPhy()) {
       btsnd_hcic_set_cig_params_v2(
-              cig_id, cig_params.sdu_itv_c_to_p, cig_params.sdu_itv_p_to_c, cig_params.sca,
+              cig_id, cig_params.sdu_interval_c_to_p, cig_params.sdu_interval_p_to_c, cig_params.sca,
               cig_params.packing, cig_params.framing, cig_params.max_trans_lat_c_to_p,
               cig_params.max_trans_lat_p_to_c, cig_params.cis_cfgs.size(), cig_params.cis_cfgs.data(),
               base::BindOnce(&iso_impl::on_set_cig_params, weak_factory_.GetWeakPtr(), cig_id,
-                             cig_params.sdu_itv_c_to_p));
+                             cig_params.sdu_interval_c_to_p));
     } else {
       btsnd_hcic_ble_set_cig_params(
-              cig_id, cig_params.sdu_itv_c_to_p, cig_params.sdu_itv_p_to_c, cig_params.sca,
+              cig_id, cig_params.sdu_interval_c_to_p, cig_params.sdu_interval_p_to_c, cig_params.sca,
               cig_params.packing, cig_params.framing, cig_params.max_trans_lat_c_to_p,
               cig_params.max_trans_lat_p_to_c, cig_params.cis_cfgs.size(), cig_params.cis_cfgs.data(),
               base::BindOnce(&iso_impl::on_set_cig_params, weak_factory_.GetWeakPtr(), cig_id,
-                             cig_params.sdu_itv_c_to_p));
+                             cig_params.sdu_interval_c_to_p));
     }
 
     BTM_LogHistory(kBtmLogTag, RawAddress::kEmpty, "CIG Create",
@@ -468,11 +469,11 @@ struct iso_impl {
     log::assert_that(IsCigKnown(cig_id), "No such cig: {}", cig_id);
 
     btsnd_hcic_ble_set_cig_params(
-            cig_id, cig_params.sdu_itv_c_to_p, cig_params.sdu_itv_p_to_c, cig_params.sca,
+            cig_id, cig_params.sdu_interval_c_to_p, cig_params.sdu_interval_p_to_c, cig_params.sca,
             cig_params.packing, cig_params.framing, cig_params.max_trans_lat_c_to_p,
             cig_params.max_trans_lat_p_to_c, cig_params.cis_cfgs.size(), cig_params.cis_cfgs.data(),
             base::BindOnce(&iso_impl::on_set_cig_params, weak_factory_.GetWeakPtr(), cig_id,
-                           cig_params.sdu_itv_c_to_p));
+                           cig_params.sdu_interval_c_to_p));
   }
 
   void on_remove_cig(uint8_t cig_id, uint8_t* stream, uint16_t len) {
@@ -1162,7 +1163,7 @@ struct iso_impl {
     auto stream_ptr = std::make_unique<iso_stream>();
     stream_ptr->conn_handle = evt.cis_conn_hdl;
     stream_ptr->group_id = evt.cig_id;
-    stream_ptr->sdu_itv = 0;
+    stream_ptr->sdu_interval = 0;
     stream_ptr->sync_info = {.tx_seq_nb = 0, .rx_seq_nb = 0};
     stream_ptr->used_credits = 0;
     stream_ptr->state_flags = kStateFlagIsIncoming;
@@ -1630,7 +1631,7 @@ struct iso_impl {
         auto stream_ptr = std::make_unique<iso_stream>();
         stream_ptr->conn_handle = conn_handle;
         stream_ptr->group_id = evt.big_handle;
-        stream_ptr->sdu_itv = last_big_create_req_sdu_itv_;
+        stream_ptr->sdu_interval = last_big_create_req_sdu_interval_;
         stream_ptr->sync_info = {.tx_seq_nb = 0, .rx_seq_nb = 0};
         stream_ptr->used_credits = 0;
         stream_ptr->state_flags = kStateFlagIsBroadcastSource;
@@ -1700,7 +1701,7 @@ struct iso_impl {
         auto stream_ptr = std::make_unique<iso_stream>();
         stream_ptr->conn_handle = conn_handle;
         stream_ptr->group_id = evt.big_handle;
-        stream_ptr->sdu_itv = last_big_create_req_sdu_itv_;
+        stream_ptr->sdu_interval = last_big_create_req_sdu_interval_;
         stream_ptr->sync_info = {.tx_seq_nb = 0, .rx_seq_nb = 0};
         stream_ptr->used_credits = 0;
         stream_ptr->state_flags = kStateFlagIsBroadcastSource;
@@ -1778,9 +1779,9 @@ struct iso_impl {
       big_params.enc_code = {0};
     }
 
-    last_big_create_req_sdu_itv_ = big_params.sdu_itv;
+    last_big_create_req_sdu_interval_ = big_params.sdu_interval;
     btsnd_hcic_ble_create_big(big_handle, big_params.adv_handle, big_params.num_bis,
-                              big_params.sdu_itv, big_params.max_sdu_size,
+                              big_params.sdu_interval, big_params.max_sdu_size,
                               big_params.max_transport_latency, big_params.rtn, big_params.phy,
                               big_params.packing, big_params.framing, big_params.enc,
                               big_params.enc_code);
@@ -1860,7 +1861,7 @@ struct iso_impl {
         auto stream_ptr = std::make_unique<iso_stream>();
         stream_ptr->conn_handle = conn_handle;
         stream_ptr->group_id = evt.big_handle;
-        stream_ptr->sdu_itv = evt.iso_interval * 1250; /* sdu_itv in us */
+        stream_ptr->sdu_interval = evt.iso_interval * 1250; /* sdu_interval in us */
         stream_ptr->sync_info = {.tx_seq_nb = 0, .rx_seq_nb = 0};
         stream_ptr->used_credits = 0;
         stream_ptr->state_flags = kStateFlagIsBroadcastSink;
@@ -2200,7 +2201,7 @@ struct iso_impl {
         auto& stream = stream_it->second;
         dprintf(fd, "        %s Connection handle: %d\n", stream_name.c_str(), stream->conn_handle);
         dprintf(fd, "          Used Credits: %d\n", stream->used_credits.load());
-        dprintf(fd, "          SDU Interval: %d\n", stream->sdu_itv);
+        dprintf(fd, "          SDU Interval: %d\n", stream->sdu_interval);
         dprintf(fd, "          State Flags: 0x%02hx\n", stream->state_flags.load());
         dump_credits_stats(fd, stream->cr_stats);
         dump_event_stats(fd, stream->evt_stats);
@@ -2228,7 +2229,7 @@ struct iso_impl {
 
   std::atomic_uint16_t iso_credits_;
   uint16_t iso_buffer_size_;
-  uint32_t last_big_create_req_sdu_itv_;
+  uint32_t last_big_create_req_sdu_interval_;
 
   VscCallback* vsc_callback_ = nullptr;
   std::list<std::function<void(bool)>> iso_traffic_active_callbacks_list_;

@@ -390,10 +390,11 @@ void btsnd_hcic_ble_set_extended_scan_enable(uint8_t enable, uint8_t filter_dupl
   btu_hcif_send_cmd(LOCAL_BR_EDR_CONTROLLER_ID, p);
 }
 
-void btsnd_hcic_ble_set_cig_params(uint8_t cig_id, uint32_t sdu_itv_c_to_p, uint32_t sdu_itv_p_to_c,
-                                   uint8_t sca, uint8_t packing, uint8_t framing,
-                                   uint16_t max_trans_lat_c_to_p, uint16_t max_trans_lat_p_to_c,
-                                   uint8_t cis_cnt, const EXT_CIS_CFG* cis_cfg,
+void btsnd_hcic_ble_set_cig_params(uint8_t cig_id, uint32_t sdu_interval_c_to_p,
+                                   uint32_t sdu_interval_p_to_c, uint8_t sca, uint8_t packing,
+                                   uint8_t framing, uint16_t max_trans_lat_c_to_p,
+                                   uint16_t max_trans_lat_p_to_c, uint8_t cis_cnt,
+                                   const EXT_CIS_CFG* cis_cfg,
                                    base::OnceCallback<void(uint8_t*, uint16_t)> cb) {
   const int params_len = HCIC_PARAM_SIZE_SET_CIG_PARAMS_BASE_LEN +
                          cis_cnt * HCIC_PARAM_SIZE_SET_CIG_PARAMS_PER_CIS_LEN;
@@ -404,8 +405,8 @@ void btsnd_hcic_ble_set_cig_params(uint8_t cig_id, uint32_t sdu_itv_c_to_p, uint
   uint8_t* pp = param;
 
   UINT8_TO_STREAM(pp, cig_id);
-  UINT24_TO_STREAM(pp, sdu_itv_c_to_p);
-  UINT24_TO_STREAM(pp, sdu_itv_p_to_c);
+  UINT24_TO_STREAM(pp, sdu_interval_c_to_p);
+  UINT24_TO_STREAM(pp, sdu_interval_p_to_c);
   UINT8_TO_STREAM(pp, sca);
   UINT8_TO_STREAM(pp, packing);
   UINT8_TO_STREAM(pp, framing);
@@ -521,9 +522,10 @@ void btsnd_hcic_ble_req_peer_sca(uint16_t conn_handle) {
 }
 
 void btsnd_hcic_ble_create_big(uint8_t big_handle, uint8_t adv_handle, uint8_t num_bis,
-                               uint32_t sdu_itv, uint16_t max_sdu_size, uint16_t transport_latency,
-                               uint8_t rtn, uint8_t phy, uint8_t packing, uint8_t framing,
-                               uint8_t enc, std::array<uint8_t, 16> bcst_code) {
+                               uint32_t sdu_interval, uint16_t max_sdu_size,
+                               uint16_t transport_latency, uint8_t rtn, uint8_t phy,
+                               uint8_t packing, uint8_t framing, uint8_t enc,
+                               std::array<uint8_t, 16> bcst_code) {
   BT_HDR* p = (BT_HDR*)osi_malloc(HCI_CMD_BUF_SIZE);
   uint8_t* pp = (uint8_t*)(p + 1);
 
@@ -537,7 +539,7 @@ void btsnd_hcic_ble_create_big(uint8_t big_handle, uint8_t adv_handle, uint8_t n
   UINT8_TO_STREAM(pp, big_handle);
   UINT8_TO_STREAM(pp, adv_handle);
   UINT8_TO_STREAM(pp, num_bis);
-  UINT24_TO_STREAM(pp, sdu_itv);
+  UINT24_TO_STREAM(pp, sdu_interval);
   UINT16_TO_STREAM(pp, max_sdu_size);
   UINT16_TO_STREAM(pp, transport_latency);
   UINT8_TO_STREAM(pp, rtn);
