@@ -685,7 +685,8 @@ public:
           return false;
         }
         if (count == 0) {
-           if (osi_property_get_bool("persist.bluetooth.leaudio.bap_enableQoS", false)) {
+           if (osi_property_get_bool("persist.bluetooth.leaudio.bap_enableQoS", false) ||
+              osi_property_get_bool("persist.bluetooth.leaudio.bap_enableQoS_src", false)) {
               log::error("One moved to streaming, processing the other one");
               PrepareAndSendEnable(leAudioDevice,
                                    state_machine_callbacks_->OnGetEnabledDirections(group->group_id_));
@@ -3691,6 +3692,7 @@ private:
     std::stringstream extra_stream;
 
     msg_stream << kLogAseEnableOp;
+    bool mSrcEnablePtsprop = osi_property_get_bool("persist.bluetooth.leaudio.bap_enableQoS_src", false);
 
     ase = leAudioDevice->GetFirstActiveAse();
     if (osi_property_get_bool("persist.bluetooth.leaudio.bap_enableQoS", false)) {
@@ -3699,8 +3701,11 @@ private:
 
     if (flag_sendenableLater) {
       log::debug("sending enable for 2nd ase");
-      //ase = leAudioDevice->GetNextActiveAse(ase);
-      ase = leAudioDevice->GetFirstActiveAse();
+      if (mSrcEnablePtsprop) {
+        ase = leAudioDevice->GetNextActiveAse(ase);
+      } else {
+        ase = leAudioDevice->GetFirstActiveAse();
+      }
     }
 
     log::assert_that(ase, "shouldn't be called without an active ASE");
@@ -3746,7 +3751,7 @@ private:
       msg_stream << "ASE_ID " << +ase->id << ",";
       extra_stream << "meta: " << base::HexEncode(conf.metadata.data(), conf.metadata.size())
                    << ";;";
-      if (osi_property_get_bool("persist.bluetooth.leaudio.bap_enableQoS", false)) {
+      if (osi_property_get_bool("persist.bluetooth.leaudio.bap_enableQoS", false) || mSrcEnablePtsprop) {
          flag_sendenableLater = true;
          break;
       }
