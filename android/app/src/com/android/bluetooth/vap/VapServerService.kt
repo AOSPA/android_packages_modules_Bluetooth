@@ -30,7 +30,6 @@ import android.provider.Settings
 import android.text.TextUtils
 import android.util.Log
 import com.android.bluetooth.btservice.AdapterService
-import com.android.bluetooth.flags.Flags
 import com.android.bluetooth.le_audio.ContentControlIdKeeper
 import com.android.bluetooth.le_audio.LeAudioService
 import com.android.bluetooth.profile.ProfileService
@@ -210,10 +209,6 @@ constructor(
 
     @VisibleForTesting
     fun shouldRejectVaSession(device: BluetoothDevice): Boolean {
-        if (!Flags.leaudioVapMultiDeviceArbitration()) {
-            return false
-        }
-
         // HFP Parity: Reject VA requests if the user is currently on a phone call.
         val telecomManager = getSystemService(android.telecom.TelecomManager::class.java)
         if (telecomManager != null && telecomManager.isInCall) {

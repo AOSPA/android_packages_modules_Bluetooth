@@ -22,9 +22,6 @@
 #include <atomic>
 #include <thread>
 
-#include <com_android_bluetooth_flags.h>
-#include <flag_macros.h>
-
 #include "bta/include/bta_vap_server_api.h"
 #include "bta/mock/bta_gatt_api_mock.h"
 #include "bta/test/common/mock_csis_client.h"
@@ -38,8 +35,6 @@
 
 using namespace ::testing;
 using namespace bluetooth::vap;
-
-#define TEST_BT com::android::bluetooth::flags
 
 extern std::atomic<int> num_async_tasks;
 extern bluetooth::common::MessageLoopThread message_loop_thread;
@@ -265,10 +260,8 @@ TEST_F(VapServerTest, notify_vasession_stopped_session_not_active) {
   SyncOnMainLoop();
 }
 
-TEST_F_WITH_FLAGS(
-        VapServerTest, notify_va_session_started_ignores_disconnected_devices,
-        REQUIRES_FLAGS_ENABLED(
-                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+TEST_F(
+        VapServerTest, notify_va_session_started_ignores_disconnected_devices) {
   RawAddress disconnected_device = RawAddress::FromString("aa:bb:cc:dd:ee:ff").value();
 
   GetVapServer()->SetVaName("MyVa");
@@ -281,10 +274,8 @@ TEST_F_WITH_FLAGS(
   SyncOnMainLoop();
 }
 
-TEST_F_WITH_FLAGS(
-        VapServerTest, on_gatt_connect_inherits_group_state,
-        REQUIRES_FLAGS_ENABLED(
-                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+TEST_F(
+        VapServerTest, on_gatt_connect_inherits_group_state) {
   RawAddress address2 = RawAddress::FromString("11:22:33:44:55:67").value();
   ON_CALL(mock_csis_client_, GetGroupId(test_address_, _)).WillByDefault(Return(1));
   ON_CALL(mock_csis_client_, GetGroupId(address2, _)).WillByDefault(Return(1));
@@ -319,10 +310,8 @@ TEST_F_WITH_FLAGS(
   EXPECT_EQ(captured_rsp->attr_value.value[0], (uint8_t)::vap::VaSessionState::VA_SESSION_ACTIVE);
 }
 
-TEST_F_WITH_FLAGS(
-        VapServerTest, on_gatt_disconnect_handovers_active_session_to_group_member,
-        REQUIRES_FLAGS_ENABLED(
-                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+TEST_F(
+        VapServerTest, on_gatt_disconnect_handovers_active_session_to_group_member) {
   RawAddress address2 = RawAddress::FromString("11:22:33:44:55:67").value();
   ON_CALL(mock_csis_client_, GetGroupId(test_address_, _)).WillByDefault(Return(1));
   ON_CALL(mock_csis_client_, GetGroupId(address2, _)).WillByDefault(Return(1));
@@ -352,10 +341,8 @@ TEST_F_WITH_FLAGS(
   SyncOnMainLoop();
 }
 
-TEST_F_WITH_FLAGS(
-        VapServerTest, handle_control_point_start_from_other_group_supersedes_session,
-        REQUIRES_FLAGS_ENABLED(
-                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+TEST_F(
+        VapServerTest, handle_control_point_start_from_other_group_supersedes_session) {
   RawAddress other_address = RawAddress::FromString("aa:bb:cc:dd:ee:ff").value();
   ON_CALL(mock_csis_client_, GetGroupId(test_address_, _)).WillByDefault(Return(1));
   ON_CALL(mock_csis_client_, GetGroupId(other_address, _)).WillByDefault(Return(2));
@@ -395,10 +382,8 @@ TEST_F_WITH_FLAGS(
   SyncOnMainLoop();
 }
 
-TEST_F_WITH_FLAGS(
-        VapServerTest, handle_control_point_stop_from_other_group_rejected,
-        REQUIRES_FLAGS_ENABLED(
-                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+TEST_F(
+        VapServerTest, handle_control_point_stop_from_other_group_rejected) {
   RawAddress other_address = RawAddress::FromString("aa:bb:cc:dd:ee:ff").value();
   ON_CALL(mock_csis_client_, GetGroupId(test_address_, _)).WillByDefault(Return(1));
   ON_CALL(mock_csis_client_, GetGroupId(other_address, _)).WillByDefault(Return(2));
@@ -438,10 +423,8 @@ TEST_F_WITH_FLAGS(
   SyncOnMainLoop();
 }
 
-TEST_F_WITH_FLAGS(
-        VapServerTest, notify_va_session_started_picks_connected_device,
-        REQUIRES_FLAGS_ENABLED(
-                ACONFIG_FLAG(TEST_BT, leaudio_vap_multi_device_arbitration))) {
+TEST_F(
+        VapServerTest, notify_va_session_started_picks_connected_device) {
   RawAddress disconnected_device = RawAddress::FromString("aa:bb:cc:dd:ee:ff").value();
 
   GetVapServer()->SetVaName("MyVa");
@@ -571,10 +554,8 @@ TEST_F(VapServerTest, on_read_descriptor_unknown_client) {
   EXPECT_EQ(read_value, 0x0000);
 }
 
-TEST_F_WITH_FLAGS(
-        VapServerTest, on_write_descriptor_ccc_saves_data,
-        REQUIRES_FLAGS_ENABLED(
-                ACONFIG_FLAG(TEST_BT, leaudio_vap_persistent_storage))) {
+TEST_F(
+        VapServerTest, on_write_descriptor_ccc_saves_data) {
   uint16_t ccc_handle = GetDescriptorHandle(::vap::uuid::kVaSessionStateCharacteristic);
   uint8_t ccc_value[] = {0x01, 0x00};  // Notification enabled
 
@@ -585,10 +566,8 @@ TEST_F_WITH_FLAGS(
   SyncOnMainLoop();
 }
 
-TEST_F_WITH_FLAGS(
-        VapServerTest, on_gatt_connect_restores_data,
-        REQUIRES_FLAGS_ENABLED(
-                ACONFIG_FLAG(TEST_BT, leaudio_vap_persistent_storage))) {
+TEST_F(
+        VapServerTest, on_gatt_connect_restores_data) {
   GetVapServer()->SetVaName("MyVa");
   SyncOnMainLoop();
 
@@ -609,10 +588,8 @@ TEST_F_WITH_FLAGS(
   SyncOnMainLoop();
 }
 
-TEST_F_WITH_FLAGS(
-        VapServerTest, set_va_name_saves_data_to_persistent_storage,
-        REQUIRES_FLAGS_ENABLED(
-                ACONFIG_FLAG(TEST_BT, leaudio_vap_persistent_storage))) {
+TEST_F(
+        VapServerTest, set_va_name_saves_data_to_persistent_storage) {
   // test_address_ is already connected in SetUp()
 
   EXPECT_CALL(mock_btif_storage_, SetVapServerData(test_address_, _)).Times(AtLeast(1));
@@ -621,10 +598,8 @@ TEST_F_WITH_FLAGS(
   SyncOnMainLoop();
 }
 
-TEST_F_WITH_FLAGS(
-        VapServerTest, on_read_descriptor_ccc_returns_restored_data,
-        REQUIRES_FLAGS_ENABLED(
-                ACONFIG_FLAG(TEST_BT, leaudio_vap_persistent_storage))) {
+TEST_F(
+        VapServerTest, on_read_descriptor_ccc_returns_restored_data) {
   GetVapServer()->SetVaName("MyVa");
   SyncOnMainLoop();
 
