@@ -914,6 +914,8 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
                 /* Look for fallback if all devices from the active group disconnected. */
                 BluetoothDevice leadDevice = leAudio.get().getLeadDevice(device);
 
+                leAudio.get().deviceDisconnected(device, false);
+
                 List<BluetoothDevice> connectedDevices = mLeAudioConnectedDevices;
 
                 if (Objects.equals(mLeAudioActiveDevice, leadDevice)
@@ -950,7 +952,6 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
                 }
             }
 
-            leAudio.get().deviceDisconnected(device, hasFallbackDevice);
         }
     }
 
