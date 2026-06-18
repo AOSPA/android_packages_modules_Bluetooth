@@ -5900,6 +5900,17 @@ public:
         log::warn("Audio HAL did not set metadata for local source");
       }
       */
+
+      /* Some earbuds update available contexts when synced to non-collocated
+       * broadcast, causing unicast resume to fail. In source monitor mode,
+       * notify BASS to suspend broadcast receivers so the context can be
+       * restored for unicast.
+       */
+      if (source_monitor_mode_ &&
+              audioContextTypeManager_->IsAnyMetadataSet(
+                      bluetooth::le_audio::types::kLeAudioDirectionSource)) {
+        handleInvalidContextTypeResumeRequest(group);
+      }
       CancelLocalAudioSourceStreamingRequestWithUnsupported();
       return;
     }
