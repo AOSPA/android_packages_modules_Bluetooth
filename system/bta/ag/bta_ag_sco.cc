@@ -77,7 +77,7 @@ constexpr uint8_t LTV_TYPE_SCO_RELAY_MODE    =  0x012;
 
 /* Codec negotiation timeout */
 #ifndef BTA_AG_CODEC_NEGOTIATION_TIMEOUT_MS
-#define BTA_AG_CODEC_NEGOTIATION_TIMEOUT_MS (3 * 1000) /* 3 seconds */
+#define BTA_AG_CODEC_NEGOTIATION_TIMEOUT_MS (5 * 1000) /* 5 seconds */
 #endif
 
 #define BTM_VOICE_SETTING_CVSD                                                                     \
