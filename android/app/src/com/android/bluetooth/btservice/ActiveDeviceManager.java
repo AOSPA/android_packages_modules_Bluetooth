@@ -1353,8 +1353,8 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
     }
 
     private class AudioManagerAudioDeviceCallback extends AudioDeviceCallback {
-        private static boolean isWiredDeviceType(int type) {
-            return switch (type) {
+        private static boolean isWiredDeviceType(AudioDeviceInfo deviceInfo) {
+            return switch (deviceInfo.getType()) {
                 case AudioDeviceInfo.TYPE_WIRED_HEADSET,
                      AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
                      AudioDeviceInfo.TYPE_USB_HEADSET -> true;
@@ -1372,15 +1372,15 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
                 return;
             }
 
+            if (Arrays.stream(addedDevices)
+                    .anyMatch(AudioManagerAudioDeviceCallback::isWiredDeviceType)) {
+                wiredAudioDeviceConnected();
+                return;
+            }
+
             for (AudioDeviceInfo deviceInfo : addedDevices) {
                 String address = deviceInfo.getAddress();
                 if (address == null || address.equals("00:00:00:00:00:00")) {
-                    continue;
-                }
-
-                if (isWiredDeviceType(deviceInfo.getType())) {
-                    Log.i(TAG, "Stop Broadcast while wired audio device is connected");
-                    stopBroadcastingAudio();
                     continue;
                 }
 
@@ -1468,6 +1468,13 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
             if (!mAdapterService.isAvailable()) {
                 Log.e(TAG, "Callback called when AdapterService is stopped");
                 return;
+            }
+
+            if (Arrays.stream(removedDevices)
+                    .anyMatch(AudioManagerAudioDeviceCallback::isWiredDeviceType)) {
+                synchronized (mLock) {
+                    setFallbackDeviceActiveLocked(null);
+                }
             }
 
             for (AudioDeviceInfo deviceInfo : removedDevices) {
