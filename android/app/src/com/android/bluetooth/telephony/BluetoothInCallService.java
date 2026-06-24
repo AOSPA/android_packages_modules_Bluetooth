@@ -2783,12 +2783,7 @@ public class BluetoothInCallService extends InCallService {
             addressUri = call.getHandle();
         }
 
-        String uri;
-        if (addressUri == null) {
-            uri = null;
-        } else {
-            uri = addressUri.getScheme() + ":" + addressUri.getSchemeSpecificPart();
-        }
+        String uri = (addressUri == null) ? "" : addressUri.toString();
 
         int callFlags = call.isIncoming() ? 0 : BluetoothLeCall.FLAG_OUTGOING_CALL;
 
