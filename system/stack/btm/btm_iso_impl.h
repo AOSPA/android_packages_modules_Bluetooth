@@ -445,7 +445,7 @@ struct iso_impl {
     log::debug(" isPhyHdt: {}", isPhyHdt);
     bool hdt_enabled = osi_property_get_bool("persist.vendor.qcom.bluetooth.hdt.enabled", false);
     if(isPhyHdt && hdt_enabled && shim::GetController()->SupportsBleHDTPhy()) {
-      btsnd_hcic_set_cig_params_v3(
+      btsnd_hcic_set_cig_params_v2(
               cig_id, cig_params.sdu_itv_c_to_p, cig_params.sdu_itv_p_to_c, cig_params.sca,
               cig_params.packing, cig_params.framing, cig_params.max_trans_lat_c_to_p,
               cig_params.max_trans_lat_p_to_c, cig_params.cis_cfgs.size(), cig_params.cis_cfgs.data(),
