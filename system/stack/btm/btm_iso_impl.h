@@ -1792,6 +1792,39 @@ struct iso_impl {
     btsnd_hcic_ble_term_big(big_handle, reason);
   }
 
+  void handle_create_big_command_status(uint8_t big_handle, uint8_t status) {
+    // Only failures are expected here. A success command status is followed by
+    // a real BIG Create Complete event and must not be turned into a synthetic
+    // completion (which would carry no connection handles and mislead the
+    // broadcaster into the success path).
+    if (status == HCI_SUCCESS) {
+      log::warn("Ignoring success command status for big_handle={}", big_handle);
+      return;
+    }
+
+    log::error("LE_CREATE_BIG command status failure: big_handle={} status={}", big_handle,
+               hci_status_code_text(static_cast<tHCI_STATUS>(status)));
+
+    IsoManagerCallbacks* client_cbs = get_client_callbacks_from_big(big_handle, /* is_source = */ true);
+    if (!client_cbs || !client_cbs->big_callbacks) {
+      log::error("No BIG callbacks registered for big_handle={}", big_handle);
+      const std::lock_guard<std::mutex> lock(iso_client_mutex_);
+      source_big_handle_to_group_map_.erase(big_handle);
+      return;
+    }
+
+    struct big_create_cmpl_evt evt = {};
+    evt.status = status;
+    evt.big_handle = big_handle;
+
+    {
+      const std::lock_guard<std::mutex> lock(iso_client_mutex_);
+      source_big_handle_to_group_map_.erase(big_handle);
+    }
+
+    client_cbs->big_callbacks->OnBigSourceEvent(BigSourceEvent::kCreateCmpl, &evt);
+  }
+
   void big_create_sync(IsoClientHandle client_handle, struct big_create_sync_params sync_params) {
     if (!com_android_bluetooth_flags_btm_broadcast_sink_support()) {
       return;
