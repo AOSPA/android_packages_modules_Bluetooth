@@ -1010,8 +1010,13 @@ public:
                                                       "s_state: " + ToString(audio_sender_state_));
       if (audio_receiver_state_ == AudioState::IDLE) {
         LeAudioDeviceGroup* group = aseGroups_.FindById(active_group_id_);
-        if (group && group->IsDirectionAvailableForConfiguration(configuration_context_type_,
-                                       bluetooth::le_audio::types::kLeAudioDirectionSource)) {
+        if (group &&
+            (group->IsDirectionAvailableForConfiguration(
+                     configuration_context_type_,
+                     bluetooth::le_audio::types::kLeAudioDirectionSource) ||
+             group->HasCodecConfigurationForDirection(
+                     configuration_context_type_,
+                     bluetooth::le_audio::types::kLeAudioDirectionSource))) {
           log::info("Suspended for SNK since current context has directional config");
           le_audio_sink_hal_client_->SuspendedForReconfiguration();
         }
@@ -1028,8 +1033,13 @@ public:
                                                       "s_state: " + ToString(audio_sender_state_));
       if (audio_sender_state_ == AudioState::IDLE) {
         LeAudioDeviceGroup* group = aseGroups_.FindById(active_group_id_);
-        if (group && group->IsDirectionAvailableForConfiguration(configuration_context_type_,
-                                         bluetooth::le_audio::types::kLeAudioDirectionSink)) {
+        if (group &&
+            (group->IsDirectionAvailableForConfiguration(
+                     configuration_context_type_,
+                     bluetooth::le_audio::types::kLeAudioDirectionSink) ||
+             group->HasCodecConfigurationForDirection(
+                     configuration_context_type_,
+                     bluetooth::le_audio::types::kLeAudioDirectionSink))) {
           log::info("Suspended for SRC since current context has directional config");
           le_audio_source_hal_client_->SuspendedForReconfiguration();
         }
@@ -5900,6 +5910,17 @@ public:
         log::warn("Audio HAL did not set metadata for local source");
       }
       */
+
+      /* Some earbuds update available contexts when synced to non-collocated
+       * broadcast, causing unicast resume to fail. In source monitor mode,
+       * notify BASS to suspend broadcast receivers so the context can be
+       * restored for unicast.
+       */
+      if (source_monitor_mode_ &&
+              audioContextTypeManager_->IsAnyMetadataSet(
+                      bluetooth::le_audio::types::kLeAudioDirectionSource)) {
+        handleInvalidContextTypeResumeRequest(group);
+      }
       CancelLocalAudioSourceStreamingRequestWithUnsupported();
       return;
     }
@@ -7451,8 +7472,13 @@ public:
     if (audio_sender_state_ >= AudioState::READY_TO_START) {
       if (audio_receiver_state_ == AudioState::IDLE) {
         LeAudioDeviceGroup* group = aseGroups_.FindById(active_group_id_);
-        if (group && group->IsDirectionAvailableForConfiguration(configuration_context_type_,
-                                       bluetooth::le_audio::types::kLeAudioDirectionSource)) {
+        if (group &&
+            (group->IsDirectionAvailableForConfiguration(
+                     configuration_context_type_,
+                     bluetooth::le_audio::types::kLeAudioDirectionSource) ||
+             group->HasCodecConfigurationForDirection(
+                     configuration_context_type_,
+                     bluetooth::le_audio::types::kLeAudioDirectionSource))) {
           log::info("Reconfiguration complete for SNK since current context has SNK config");
           previously_active_directions |= bluetooth::le_audio::types::kLeAudioDirectionSource;
         }
@@ -7462,8 +7488,13 @@ public:
     if (audio_receiver_state_ >= AudioState::READY_TO_START) {
       if (audio_sender_state_ == AudioState::IDLE) {
         LeAudioDeviceGroup* group = aseGroups_.FindById(active_group_id_);
-        if (group && group->IsDirectionAvailableForConfiguration(configuration_context_type_,
-                                         bluetooth::le_audio::types::kLeAudioDirectionSink)) {
+        if (group &&
+            (group->IsDirectionAvailableForConfiguration(
+                     configuration_context_type_,
+                     bluetooth::le_audio::types::kLeAudioDirectionSink) ||
+             group->HasCodecConfigurationForDirection(
+                     configuration_context_type_,
+                     bluetooth::le_audio::types::kLeAudioDirectionSink))) {
           log::info("Reconfiguration complete for SRC since current context has SRC config");
           previously_active_directions |= bluetooth::le_audio::types::kLeAudioDirectionSink;
         }
@@ -7678,7 +7709,6 @@ public:
         }
 
         if (!IsInCall() && defer_media_reconfig_) {
-          reconfigurationComplete();
           in_call_ = true;
           defer_media_reconfig_ = false;
           SetInCall(false);
@@ -7760,12 +7790,6 @@ public:
               if (track_in_call_update_ == IN_CALL_UPDATE_FROM_BT_APP_AND_BT_HAL) {
                 log::warn("Both BT App and UpdateMetadata received for call,"
                           " send reconfigurationComplete to BT HAL");
-                if (!group->IsDirectionAvailableForConfiguration(configuration_context_type_,
-                                               bluetooth::le_audio::types::kLeAudioDirectionSource)) {
-                  log::warn("invalidated config, fetching again for configuration_context_type_: {}",
-                             common::ToString(configuration_context_type_));
-                  group->GetConfiguration(configuration_context_type_);
-                }
                 reconfigurationComplete();
                 notifyAudioLocalSink(UnicastMonitorModeStatus::SUSPENDED);
                 notifyAudioLocalSource(UnicastMonitorModeStatus::SUSPENDED);
@@ -7791,7 +7815,6 @@ public:
                 GroupStream(group, configuration_context_type_, remote_contexts);
               }
               if (defer_call_reconfig_) {
-                reconfigurationComplete();
                 in_call_ = false;
                 defer_call_reconfig_ = false;
                 SetInCall(true);

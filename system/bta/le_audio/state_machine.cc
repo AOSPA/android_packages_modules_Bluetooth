@@ -2379,8 +2379,8 @@ private:
            (cis_cfg.phy_c_to_p & bluetooth::hci::kIsoCigPhyHdt) &&
            (controller && controller->SupportsBleHDTPhy())) {
         log::info("Fill HDT parameters in CIS");
-        cis_cfg.coded_rates_c_to_p = 0x0003;
-        cis_cfg.coded_rates_p_to_c = 0x0003;
+        cis_cfg.coded_rates_c_to_p = 0x03;
+        cis_cfg.coded_rates_p_to_c = 0x03;
         // HDT rate bitmap property (persist.vendor.qcom.bluetooth.hdt_rate):
         //   Per spec, Rates_C_To_P / Rates_P_To_C must be a CONTIGUOUS bitmask
         //   (no zero between the lowest and highest set bit).

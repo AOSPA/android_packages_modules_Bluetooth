@@ -5262,7 +5262,7 @@ public class LeAudioService extends ConnectableProfile {
                 return;
             }
             Log.d(TAG, "setInactiveForBroadcast: stop broadcast now");
-            updateFallbackUnicastGroupIdForBroadcast(LE_AUDIO_GROUP_ID_INVALID);
+            removeActiveDevice(true);
             stopBroadcast(broadcastId.get());
             suspendLeAudioStream();
             Log.d(TAG, "Wait for broadcast to stop");
