@@ -7689,7 +7689,6 @@ public:
         }
 
         if (!IsInCall() && defer_media_reconfig_) {
-          reconfigurationComplete();
           in_call_ = true;
           defer_media_reconfig_ = false;
           SetInCall(false);
@@ -7802,7 +7801,6 @@ public:
                 GroupStream(group, configuration_context_type_, remote_contexts);
               }
               if (defer_call_reconfig_) {
-                reconfigurationComplete();
                 in_call_ = false;
                 defer_call_reconfig_ = false;
                 SetInCall(true);
