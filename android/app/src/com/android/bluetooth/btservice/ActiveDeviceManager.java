@@ -914,6 +914,8 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
                 /* Look for fallback if all devices from the active group disconnected. */
                 BluetoothDevice leadDevice = leAudio.get().getLeadDevice(device);
 
+                leAudio.get().deviceDisconnected(device, false);
+
                 List<BluetoothDevice> connectedDevices = mLeAudioConnectedDevices;
 
                 if (Objects.equals(mLeAudioActiveDevice, leadDevice)
@@ -950,7 +952,6 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
                 }
             }
 
-            leAudio.get().deviceDisconnected(device, hasFallbackDevice);
         }
     }
 
@@ -1352,8 +1353,8 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
     }
 
     private class AudioManagerAudioDeviceCallback extends AudioDeviceCallback {
-        private static boolean isWiredDeviceType(int type) {
-            return switch (type) {
+        private static boolean isWiredDeviceType(AudioDeviceInfo deviceInfo) {
+            return switch (deviceInfo.getType()) {
                 case AudioDeviceInfo.TYPE_WIRED_HEADSET,
                      AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
                      AudioDeviceInfo.TYPE_USB_HEADSET -> true;
@@ -1371,15 +1372,15 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
                 return;
             }
 
+            if (Arrays.stream(addedDevices)
+                    .anyMatch(AudioManagerAudioDeviceCallback::isWiredDeviceType)) {
+                wiredAudioDeviceConnected();
+                return;
+            }
+
             for (AudioDeviceInfo deviceInfo : addedDevices) {
                 String address = deviceInfo.getAddress();
                 if (address == null || address.equals("00:00:00:00:00:00")) {
-                    continue;
-                }
-
-                if (isWiredDeviceType(deviceInfo.getType())) {
-                    Log.i(TAG, "Stop Broadcast while wired audio device is connected");
-                    stopBroadcastingAudio();
                     continue;
                 }
 
@@ -1467,6 +1468,13 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
             if (!mAdapterService.isAvailable()) {
                 Log.e(TAG, "Callback called when AdapterService is stopped");
                 return;
+            }
+
+            if (Arrays.stream(removedDevices)
+                    .anyMatch(AudioManagerAudioDeviceCallback::isWiredDeviceType)) {
+                synchronized (mLock) {
+                    setFallbackDeviceActiveLocked(null);
+                }
             }
 
             for (AudioDeviceInfo deviceInfo : removedDevices) {
@@ -2064,17 +2072,17 @@ public class ActiveDeviceManager implements AdapterService.BluetoothStateCallbac
                 Log.i(TAG, "Found an A2DP fallback device: " + device + ", going for Music" +
                            "player pause");
                 setA2dpActiveDevice(null, /* stopAudio= */ false);
+                /* Clear LE Audio active device before setting A2DP fallback to ensure
+                 * AudioPolicyService processes the LE Audio removal first.*/
+                if (!Utils.isDualModeAudioEnabled()) {
+                    setLeAudioActiveDevice(null, /* stopAudio= */ true);
+                }
                 Log.d(TAG, "Setting A2DP fallback device as the Active Device");
                 setA2dpActiveDevice(device, /* stopAudio= */ true);
                 if (Objects.equals(headsetFallbackDevice, device)) {
                     setHfpActiveDevice(device);
                 } else {
                     setHfpActiveDevice(null);
-                }
-                /* If dual mode is enabled, LEA will be made active once all supported
-                classic audio profiles are made active for the device. */
-                if (!Utils.isDualModeAudioEnabled()) {
-                    setLeAudioActiveDevice(null, /* stopAudio= */ false);
                 }
                 setHearingAidActiveDevice(null, /* stopAudio= */ false);
             } else {
