@@ -6805,6 +6805,31 @@ public:
     BidirectionalPair<AudioContexts> remote_metadata = config.second;
     if (!remote_metadata.sink.any() && !remote_metadata.source.any()) {
       log::warn("No valid metadata to update or reconfigure to");
+      /* Some earbuds, once synced to a broadcast, update their available audio
+       * context to no longer allow MEDIA/GAME. With GAME not allowed on the
+       * group, the context resolution above yields no valid metadata, so the
+       * stack can neither reconfigure the unicast group to GAME nor deliver the
+       * GAME metadata update to the upper layer (Java) on the normal path.
+       *
+       * In that case, while a broadcast is streaming, explicitly notify the
+       * upper layer of the GAME context here so it marks the broadcast device
+       * inactive and the Audio Framework stops sending BIS frames before the
+       * unicast (VBC) stream is brought up. Otherwise BIS and CIS frames overlap
+       * and the controller crashes on a frame-length mismatch. Notify once on
+       * the edge. */
+      if (LeAudioBroadcaster::IsLeAudioBroadcasterRunning() &&
+          LeAudioBroadcaster::Get()->IsLeAudioBroadcastStreaming() &&
+          new_config_context == LeAudioContextType::GAME) {
+        if (!game_broadcast_inactive_notified_) {
+          game_broadcast_inactive_notified_ = true;
+          log::info(
+                  "GAME not allowed while synced to broadcast, notify upper layer "
+                  "to set broadcast inactive");
+          callbacks_->OnMetadataUpdate(LeAudioContextToIntContent(LeAudioContextType::GAME));
+        }
+      } else {
+        game_broadcast_inactive_notified_ = false;
+      }
       /* Avoid reconfiguring to MEDIA while a broadcast is active and the unicast
       * group is streaming. Reconfiguring during an active broadcast can disrupt
       * playback. GAME context is exempt because it requires low-latency unicast
@@ -8186,6 +8211,11 @@ private:
 
   /* Assume that  Audio HAL can send empty metadata when tracks are closed */
   bool audio_hal_is_capable_to_send_empty_metadata_ = true;
+
+  /* Set once we have notified the upper layer that broadcast became inactive due
+   * to GAME source metadata, so the notification is sent only on the edge and
+   * not on every metadata update while broadcast is streaming. */
+  bool game_broadcast_inactive_notified_ = false;
 
   // Member variables should appear before the WeakPtrFactory, to ensure
   // that any WeakPtrs are invalidated before its members
