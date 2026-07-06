@@ -625,9 +625,14 @@ private:
         active_config_ = std::nullopt;
         bool disabling = GetState() == BroadcastStateMachine::State::DISABLING;
 
-        /* Go back to configured if BIG is inactive (we are still announcing) and state is not
-         * stopping*/
-        if (GetState() != BroadcastStateMachine::State::STOPPING) {
+        /* Unexpected remote BIG termination (not host-initiated) while active: move to
+         * STOPPING so a following stale START is a no-op, avoiding a spurious CreateBig(). */
+        if ((GetState() == BroadcastStateMachine::State::STREAMING ||
+             GetState() == BroadcastStateMachine::State::ENABLING) &&
+            evt->reason != HCI_ERR_CONN_CAUSE_LOCAL_HOST) {
+          SetState(State::STOPPING);
+        } else if (GetState() != BroadcastStateMachine::State::STOPPING) {
+          /* Go back to configured if BIG is inactive (we are still announcing). */
           SetState(State::CONFIGURED);
         }
 
