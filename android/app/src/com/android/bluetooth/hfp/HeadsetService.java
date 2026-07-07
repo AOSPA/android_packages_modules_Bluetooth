@@ -3229,6 +3229,10 @@ public class HeadsetService extends ConnectableProfile {
                                 + mActiveDevice);
                 return;
             }
+            if (isVirtualCallStarted()) {
+                Log.i(TAG, "processAtBcc: virtual call in progress, SCO already up for " + device);
+                return;
+            }
             if (!device.equals(mExposedActiveDevice)) {
                 Log.i(TAG, "Active device doesn't match current device, defer SCO start");
                 mPendingScoConnectionDevice = device;
