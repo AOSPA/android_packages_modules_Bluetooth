@@ -1710,9 +1710,18 @@ public:
                              configuration_context_type_ != LeAudioContextType::CONVERSATIONAL))) {
       log::debug("{} is not streaming or not configuring to other contexts", active_group_id_);
       if (!in_call) {
-        log::info("Clear decoding session metadata while call ended");
+        log::info("Clear decoding and encoding session metadata while call ended");
         std::vector<record_track_metadata_v7> empty_tracks = {};
         audioContextTypeManager_->SetDecodingSessionMetadata(empty_tracks);
+        /* Also clear encoding metadata so updateVoipState() resets in_voip_ after a
+         * rejected call (RINGING->DISCONNECTED before streaming began). Without this,
+         * CONVERSATIONAL set during RINGING persists and causes the next MIC session to
+         * select CONVERSATIONAL context instead of LIVE. Safe to clear unconditionally:
+         * this branch is only reached when the group is not streaming and not targeting
+         * streaming, so no active Audio HAL source session exists that could have set
+         * valid non-call encoding metadata. */
+        std::vector<struct playback_track_metadata_v7> empty_enc_tracks = {};
+        audioContextTypeManager_->SetEncodingSessionMetadata(empty_enc_tracks);
       }
       if (group && group->IsSuspendedForReconfiguration()) {
         log::error("AHAL is still in suspend state, send resume.");
@@ -1737,6 +1746,12 @@ public:
       if (group->IsDirectionAvailableForConfiguration(
           configuration_context_type_, bluetooth::le_audio::types::kLeAudioDirectionSink)) {
         in_call_metadata_context_types_.source = local_metadata_context_types_.source;
+        /* Do not cache transient RINGTONE as the pre-call restore context. When a ringtone
+         * plays during RINGING, local_metadata may hold RINGTONE. If a subsequent
+         * SetInCall(true) snapshots it, SetInCall(false) teardown would restore RINGTONE,
+         * keeping in_voip_=true after the call ends. Strip it at save time so the cache
+         * always holds a valid post-call resumable context (MEDIA, LIVE, GAME, etc.). */
+        in_call_metadata_context_types_.source.unset(LeAudioContextType::RINGTONE);
       }
       if (group->IsDirectionAvailableForConfiguration(
           configuration_context_type_, bluetooth::le_audio::types::kLeAudioDirectionSource)) {
@@ -1805,6 +1820,17 @@ public:
                    local_metadata_context_types_.source.to_string());
         in_call_metadata_context_types_.sink.clear();
         in_call_metadata_context_types_.source.clear();
+        /* Remove RINGTONE from the restored post-call context before calling
+         * OverrideContextTypes. RINGTONE in in_call_metadata indicates a stale
+         * ringtone backup caused by a concurrent SetInCall(true) overwriting the
+         * original pre-call MEDIA/LIVE snapshot. Leaving it causes updateVoipState()
+         * to keep in_voip_=true, which makes a subsequent MIC recording session
+         * select CONVERSATIONAL instead of LIVE. */
+        local_metadata_context_types_.source.unset(LeAudioContextType::RINGTONE);
+        if (local_metadata_context_types_.sink.none() &&
+            local_metadata_context_types_.source.none()) {
+          local_metadata_context_types_.source.set(LeAudioContextType::MEDIA);
+        }
         // Force reconfig
         audioContextTypeManager_->OverrideContextTypes(local_metadata_context_types_);
         reconfigure = true;
@@ -1853,6 +1879,11 @@ public:
       if (configuration_context_type_ == LeAudioContextType::CONVERSATIONAL) {
         log::info("Voip call is ended, clear sink context type");
         local_metadata_context_types_.sink.clear();
+        /* Strip RINGTONE from source before OverrideContextTypes: when the VoIP call
+         * setup involved ringtone playback, local_metadata.source can still hold RINGTONE
+         * at teardown. Passing it to OverrideContextTypes causes updateVoipState() to keep
+         * in_voip_=true, breaking subsequent MIC recording context selection. */
+        local_metadata_context_types_.source.unset(LeAudioContextType::RINGTONE);
         audioContextTypeManager_->OverrideContextTypes(local_metadata_context_types_);
       }
     }
