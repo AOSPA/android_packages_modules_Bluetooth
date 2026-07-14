@@ -542,6 +542,27 @@ public class CallAudio {
         return numConnectedAudioDevices > 0;
     }
 
+    public boolean isAudioConnected(BluetoothDevice device) {
+        if (device == null) {
+            return false;
+        }
+        // broadcastScoStatus is only maintained for VOIP calls while faking HFP for LEA. For a
+        // real (non-VoIP) HFP call, CallAudio never records the SCO audio state, so combine the
+        // real HeadsetService SCO state; otherwise the LEA-VoIP-WAR isAudioConnected() path
+        // reports SCO off during a real call and BT_SCO=on is suppressed. (CR 4606060)
+        CallDevice callDevice = mCallDevicesMap.get(device.getAddress());
+        if (callDevice != null
+                && callDevice.broadcastScoStatus != BluetoothHeadset.STATE_AUDIO_DISCONNECTED) {
+            return true;
+        }
+        final var headsetService = mAdapterService.getHeadsetService();
+        if (headsetService.isPresent() && headsetService.get().isAudioConnected(device)) {
+            Log.d(TAG, " isAudioConnected: real HFP SCO connected for " + device);
+            return true;
+        }
+        return false;
+    }
+
     public BluetoothDevice getActiveDevice() {
         Log.d(TAG, "getActiveDevice, mActiveDevice:" + mActiveDevice);
         return mActiveDevice;
