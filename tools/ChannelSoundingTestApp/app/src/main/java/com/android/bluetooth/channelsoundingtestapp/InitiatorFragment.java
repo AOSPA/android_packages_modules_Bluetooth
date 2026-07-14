@@ -67,9 +67,9 @@ public class InitiatorFragment extends Fragment {
         mBleConnectionViewModel = new ViewModelProvider(requireActivity()).get(BleConnectionViewModel.class);
         mInitiatorViewModel = new ViewModelProvider(requireActivity()).get(InitiatorViewModel.class);
 
-        mInitiatorViewModel.getDistanceResult().observe(getViewLifecycleOwner(), distanceMeters -> {
-            if (distanceMeters != null) {
-                updateConnectedDeviceDistanceRows(distanceMeters);
+        mInitiatorViewModel.getAllDistances().observe(getViewLifecycleOwner(), distanceMap -> {
+            if (distanceMap != null) {
+                updateAllDeviceDistances(distanceMap);
             }
         });
 
@@ -80,37 +80,41 @@ public class InitiatorFragment extends Fragment {
                     addDeviceRow(device);
                 }
             }
+            // After adding rows, force an update with the latest known distances.
+            updateAllDeviceDistances(mInitiatorViewModel.getAllDistances().getValue());
         });
     }
 
     private void addDeviceRow(BluetoothDevice device) {
         View rowView = LayoutInflater.from(getContext()).inflate(R.layout.row_connected_device, mLayoutConnectedDevices, false);
+        rowView.setTag(device.getAddress()); // Use address as a unique tag for the view.
         TextView deviceAddress = rowView.findViewById(R.id.device_address);
         Button btnOpenControl = rowView.findViewById(R.id.btn_open_control);
-        TextView distanceText = rowView.findViewById(R.id.distance_text);
 
         deviceAddress.setText(device.getAddress());
         
         btnOpenControl.setOnClickListener(v -> {
             Bundle bundle = new Bundle();
             bundle.putString("device_address", device.getAddress());
-            Navigation.findNavController(getView()).navigate(R.id.action_InitiatorFragment_to_DeviceControlFragment, bundle);
+            Navigation.findNavController(requireView()).navigate(R.id.action_InitiatorFragment_to_DeviceControlFragment, bundle);
         });
-
-        Double currentDistance = mInitiatorViewModel.getDistanceResult().getValue();
-        if (currentDistance != null) {
-            distanceText.setText(DISTANCE_DECIMAL_FMT.format(currentDistance) + " m");
-        }
 
         mLayoutConnectedDevices.addView(rowView);
     }
 
-    private void updateConnectedDeviceDistanceRows(double distanceMeters) {
+    private void updateAllDeviceDistances(java.util.Map<String, Double> distanceMap) {
+        if (distanceMap == null) {
+            return;
+        }
         for (int i = 0; i < mLayoutConnectedDevices.getChildCount(); i++) {
             View rowView = mLayoutConnectedDevices.getChildAt(i);
+            String deviceAddress = (String) rowView.getTag();
             TextView distanceText = rowView.findViewById(R.id.distance_text);
-            if (distanceText != null) {
-                distanceText.setText(DISTANCE_DECIMAL_FMT.format(distanceMeters) + " m");
+            if (deviceAddress != null && distanceText != null && distanceMap.containsKey(deviceAddress)) {
+                Double distance = distanceMap.get(deviceAddress);
+                if (distance != null) {
+                    distanceText.setText(DISTANCE_DECIMAL_FMT.format(distance) + " m");
+                }
             }
         }
     }

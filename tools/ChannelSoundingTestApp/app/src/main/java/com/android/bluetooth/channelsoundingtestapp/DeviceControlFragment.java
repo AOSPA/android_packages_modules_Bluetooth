@@ -148,16 +148,16 @@ public class DeviceControlFragment extends Fragment {
         // Use activity scope so distance measurement continues when leaving this control screen.
         mInitiatorViewModel = new ViewModelProvider(requireActivity()).get(InitiatorViewModel.class);
 
-        // Setup Target Device
+        // Get the BluetoothDevice object.
         BluetoothGatt gatt = mBleConnectionViewModel.getGattForDevice(mDeviceAddress);
-        if (gatt != null) {
-            mInitiatorViewModel.setTargetDevice(gatt.getDevice());
-            printLog("Target device set: " + gatt.getDevice().getName() + " (" + mDeviceAddress + ")");
-        } else {
+        if (gatt == null) {
             printLog("Error: Device not connected or not found in GATT map.");
             Toast.makeText(getContext(), "Device not connected!", Toast.LENGTH_SHORT).show();
-            // Optionally navigate back?
+            // Consider disabling UI or navigating back.
+            return;
         }
+        BluetoothDevice device = gatt.getDevice();
+        printLog("Target device set: " + device.getName() + " (" + mDeviceAddress + ")");
 
         mBleConnectionViewModel
                 .getLogText()
@@ -193,43 +193,42 @@ public class DeviceControlFragment extends Fragment {
           }
         });
 
+        // Observe device-specific LiveData from the ViewModel.
         mInitiatorViewModel
-                .getCsStarted()
-                .observe(
-                        getViewLifecycleOwner(),
-                        started -> {
-                            if (started) {
-                                mButtonCs.setText("Stop Distance Measurement");
-                            } else {
-                                mButtonCs.setText("Start Distance Measurement");
-                            }
-                        });
-        mInitiatorViewModel
-                .getLogText()
-                .observe(
-                        getViewLifecycleOwner(),
-                        log -> {
-                            mLogText.setText(log);
-                        });
+                .getCsStarted(device)
+                .observe(getViewLifecycleOwner(), started -> {
+                    if (started) {
+                        mButtonCs.setText("Stop Distance Measurement");
+                    } else {
+                        mButtonCs.setText("Start Distance Measurement");
+                    }
+                });
 
         mInitiatorViewModel
-                .getDistanceResult()
-                .observe(
-                        getViewLifecycleOwner(),
-                        distanceMeters -> {
-                            mDistanceCanvasView.addNode(Math.round(distanceMeters * 100.0) / 100.0, /* abort= */ false);
-                            mDistanceText.setText(
-                                    DISTANCE_DECIMAL_FMT.format(distanceMeters) + " m");
-                            curr_distance = distanceMeters;
-                            String timestamp = LocalDateTime.now().format(
-                                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                            FileAppender.appendToFile(getActivity(), "myfile_" + mDeviceAddress + ".csv",
-                                distanceMeters + "," + timestamp + "\n");
-                        });
+                .getLogText(device)
+                .observe(getViewLifecycleOwner(), log -> {
+                    // Only update if the log is for this device to avoid seeing other devices' logs.
+                    if (log != null && log.contains(mDeviceAddress)) {
+                         mLogText.setText(log);
+                    }
+                });
 
-        mDmMethodArrayAdapter.addAll(mInitiatorViewModel.getSupportedDmMethods());
-        mFreqArrayAdapter.addAll(mInitiatorViewModel.getMeasurementFreqs());
-        mDurationArrayAdapter.addAll(mInitiatorViewModel.getMeasurementDurations());
+        mInitiatorViewModel
+                .getDistanceResult(device)
+                .observe(getViewLifecycleOwner(), distanceMeters -> {
+                    if (distanceMeters == null) return;
+                    mDistanceCanvasView.addNode(Math.round(distanceMeters * 100.0) / 100.0, false);
+                    mDistanceText.setText(DISTANCE_DECIMAL_FMT.format(distanceMeters) + " m");
+                    curr_distance = distanceMeters;
+                    String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    FileAppender.appendToFile(getActivity(), "myfile_" + mDeviceAddress + ".csv",
+                        distanceMeters + "," + timestamp + "\n");
+                });
+
+        // Populate spinners with data from the device's session.
+        mDmMethodArrayAdapter.addAll(mInitiatorViewModel.getSupportedDmMethods(device));
+        mFreqArrayAdapter.addAll(mInitiatorViewModel.getMeasurementFreqs(device));
+        mDurationArrayAdapter.addAll(mInitiatorViewModel.getMeasurementDurations(device));
         int position = mDmMethodArrayAdapter.getPosition("Channel Sounding");
         if (position != -1) {
             mSpinnerDmMethod.setSelection(position);
@@ -250,24 +249,28 @@ public class DeviceControlFragment extends Fragment {
           String conn_priority = mConnUpSpinner.getSelectedItem().toString();
           mBleConnectionViewModel.updateConnectionInterval(currentGatt.getDevice(), conn_priority);
 
-          Boolean csStarted = mInitiatorViewModel.getCsStarted().getValue();
+          Boolean csStarted = mInitiatorViewModel.getCsStarted(currentGatt.getDevice()).getValue();
           if (csStarted == null || !csStarted) {
               mDistanceCanvasView.cleanUp();
           }
 
           mInitiatorViewModel.toggleCsStartStop(
-                methodName, freq, sec_mode_selected, "REPORT_FREQUENCY_LOW", duration_selected);
+                currentGatt.getDevice(), methodName, freq, sec_mode_selected, "REPORT_FREQUENCY_LOW", duration_selected);
         });
 
         distancemarker.setOnClickListener(v -> {
+          BluetoothGatt currentGatt = mBleConnectionViewModel.getGattForDevice(mDeviceAddress);
+          if (currentGatt == null) return;
           String dist_meas = dis_meas.getText().toString();
-          mInitiatorViewModel.actualDistance(dist_meas);
+          mInitiatorViewModel.actualDistance(currentGatt.getDevice(), dist_meas);
           FileAppender.appendToFile(
               getActivity(), "myfile_" + mDeviceAddress + ".csv", "changing distance to " + dist_meas + "\n");
         });
 
         distancemarkerlog.setOnClickListener(v -> {
-          mInitiatorViewModel.logMarker();
+          BluetoothGatt currentGatt = mBleConnectionViewModel.getGattForDevice(mDeviceAddress);
+          if (currentGatt == null) return;
+          mInitiatorViewModel.logMarker(currentGatt.getDevice());
         });
     }
 
