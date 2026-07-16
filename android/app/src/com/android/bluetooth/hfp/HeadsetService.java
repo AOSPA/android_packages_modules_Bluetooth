@@ -1096,7 +1096,7 @@ public class HeadsetService extends ConnectableProfile {
         return mSystemInterface.isInCall() || mSystemInterface.isRinging() || isAudioOn();
     }
 
-    boolean isAudioConnected(BluetoothDevice device) {
+    public boolean isAudioConnected(BluetoothDevice device) {
         synchronized (mStateMachines) {
             final HeadsetStateMachine stateMachine = mStateMachines.get(device);
             if (stateMachine == null) {

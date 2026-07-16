@@ -858,24 +858,31 @@ bool bluetooth::shim::is_ad_type_filter_supported() {
 }
 
 void bluetooth::shim::set_ad_type_rsi_filter(bool enable) {
+  // Index 0 is the transient "allow-all" slot shared by LE inquiry/discovery
+  // (btm_ble_start_inquiry, set_empty_filter, GD start_discovery). Using it for
+  // the CSIS RSI filter causes both features to fight over the same APCF index:
+  // starting an inquiry deletes/overwrites index 0 and silently wipes the RSI
+  // filter. Use a dedicated reserved index instead. Must match the reservation
+  // in ScanManager.initFilterIndexStack() (Java dynamic pool starts after it).
+  constexpr uint8_t kAdTypeRsiFilterIndex = 0x04;
   bluetooth::hci::AdvertisingFilterParameter advertising_filter_parameter;
-  bluetooth::shim::GetScanning()->ScanFilterParameterSetup(bluetooth::hci::ApcfAction::DELETE, 0x00,
-                                                           advertising_filter_parameter);
+  bluetooth::shim::GetScanning()->ScanFilterParameterSetup(
+          bluetooth::hci::ApcfAction::DELETE, kAdTypeRsiFilterIndex, advertising_filter_parameter);
   if (enable) {
     std::vector<bluetooth::hci::AdvertisingPacketContentFilterCommand> filters = {};
     bluetooth::hci::AdvertisingPacketContentFilterCommand filter{};
     filter.filter_type = bluetooth::hci::ApcfFilterType::AD_TYPE;
     filter.ad_type = BTM_BLE_AD_TYPE_RSI;
     filters.push_back(filter);
-    bluetooth::shim::GetScanning()->ScanFilterAdd(0x00, filters);
+    bluetooth::shim::GetScanning()->ScanFilterAdd(kAdTypeRsiFilterIndex, filters);
 
     advertising_filter_parameter.delivery_mode = bluetooth::hci::DeliveryMode::IMMEDIATE;
     advertising_filter_parameter.feature_selection = kAllowADTypeFilter;
     advertising_filter_parameter.list_logic_type = kAllowADTypeFilter;
     advertising_filter_parameter.filter_logic_type = kFilterLogicOr;
     advertising_filter_parameter.rssi_high_thresh = kLowestRssiValue;
-    bluetooth::shim::GetScanning()->ScanFilterParameterSetup(bluetooth::hci::ApcfAction::ADD, 0x00,
-                                                             advertising_filter_parameter);
+    bluetooth::shim::GetScanning()->ScanFilterParameterSetup(
+            bluetooth::hci::ApcfAction::ADD, kAdTypeRsiFilterIndex, advertising_filter_parameter);
   }
 }
 
