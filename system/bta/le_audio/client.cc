@@ -2672,6 +2672,18 @@ public:
         return;
       }
 
+      if (current_connect_state == DeviceConnectState::CONNECTED_AUTOCONNECT_GETTING_READY) {
+        log::info("{} already connected, getting profile ready", leAudioDevice->address_);
+        leAudioDevice->SetConnectionState(DeviceConnectState::CONNECTED_BY_USER_GETTING_READY);
+        return;
+      }
+
+      if (current_connect_state == DeviceConnectState::CONNECTED_BY_USER_GETTING_READY) {
+        log::info("{} already connected by the user, silent ignore, stay tuned",
+                  leAudioDevice->address_);
+        return;
+      }
+
       if (leAudioDevice->group_id_ != bluetooth::groups::kGroupUnknown) {
         auto group = GetGroupIfEnabled(leAudioDevice->group_id_);
         if (!group) {
