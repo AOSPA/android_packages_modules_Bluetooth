@@ -95,7 +95,7 @@ struct iso_stream {
 
   struct iso_sync_info sync_info;
   std::atomic_uint16_t state_flags;
-  uint32_t sdu_itv;
+  uint32_t sdu_interval;
   std::atomic_uint16_t used_credits;
 
   struct credits_stats {
@@ -358,10 +358,11 @@ struct iso_impl {
     }
   }
 
-  void on_set_cig_params(uint8_t cig_id, uint32_t sdu_itv_c_to_p, uint8_t* stream, uint16_t len) {
+  void on_set_cig_params(uint8_t cig_id, uint32_t sdu_interval_c_to_p, uint8_t* stream,
+                         uint16_t len) {
     uint8_t cis_cnt;
     uint16_t conn_handle;
-    cig_create_cmpl_evt evt;
+    cig_create_cmpl_evt evt{};
 
     log::assert_that(len >= 3, "Invalid packet length: {}", len);
 
@@ -403,7 +404,7 @@ struct iso_impl {
         auto stream_ptr = std::make_unique<iso_stream>();
         stream_ptr->conn_handle = conn_handle;
         stream_ptr->group_id = cig_id;
-        stream_ptr->sdu_itv = sdu_itv_c_to_p;
+        stream_ptr->sdu_interval = sdu_interval_c_to_p;
         stream_ptr->sync_info = {.tx_seq_nb = 0, .rx_seq_nb = 0};
         stream_ptr->used_credits = 0;
         stream_ptr->state_flags = kStateFlagsNone;
@@ -446,18 +447,18 @@ struct iso_impl {
     bool hdt_enabled = osi_property_get_bool("persist.vendor.qcom.bluetooth.hdt.enabled", false);
     if(isPhyHdt && hdt_enabled && shim::GetController()->SupportsBleHDTPhy()) {
       btsnd_hcic_set_cig_params_v2(
-              cig_id, cig_params.sdu_itv_c_to_p, cig_params.sdu_itv_p_to_c, cig_params.sca,
+              cig_id, cig_params.sdu_interval_c_to_p, cig_params.sdu_interval_p_to_c, cig_params.sca,
               cig_params.packing, cig_params.framing, cig_params.max_trans_lat_c_to_p,
               cig_params.max_trans_lat_p_to_c, cig_params.cis_cfgs.size(), cig_params.cis_cfgs.data(),
               base::BindOnce(&iso_impl::on_set_cig_params, weak_factory_.GetWeakPtr(), cig_id,
-                             cig_params.sdu_itv_c_to_p));
+                             cig_params.sdu_interval_c_to_p));
     } else {
       btsnd_hcic_ble_set_cig_params(
-              cig_id, cig_params.sdu_itv_c_to_p, cig_params.sdu_itv_p_to_c, cig_params.sca,
+              cig_id, cig_params.sdu_interval_c_to_p, cig_params.sdu_interval_p_to_c, cig_params.sca,
               cig_params.packing, cig_params.framing, cig_params.max_trans_lat_c_to_p,
               cig_params.max_trans_lat_p_to_c, cig_params.cis_cfgs.size(), cig_params.cis_cfgs.data(),
               base::BindOnce(&iso_impl::on_set_cig_params, weak_factory_.GetWeakPtr(), cig_id,
-                             cig_params.sdu_itv_c_to_p));
+                             cig_params.sdu_interval_c_to_p));
     }
 
     BTM_LogHistory(kBtmLogTag, RawAddress::kEmpty, "CIG Create",
@@ -468,15 +469,15 @@ struct iso_impl {
     log::assert_that(IsCigKnown(cig_id), "No such cig: {}", cig_id);
 
     btsnd_hcic_ble_set_cig_params(
-            cig_id, cig_params.sdu_itv_c_to_p, cig_params.sdu_itv_p_to_c, cig_params.sca,
+            cig_id, cig_params.sdu_interval_c_to_p, cig_params.sdu_interval_p_to_c, cig_params.sca,
             cig_params.packing, cig_params.framing, cig_params.max_trans_lat_c_to_p,
             cig_params.max_trans_lat_p_to_c, cig_params.cis_cfgs.size(), cig_params.cis_cfgs.data(),
             base::BindOnce(&iso_impl::on_set_cig_params, weak_factory_.GetWeakPtr(), cig_id,
-                           cig_params.sdu_itv_c_to_p));
+                           cig_params.sdu_interval_c_to_p));
   }
 
   void on_remove_cig(uint8_t cig_id, uint8_t* stream, uint16_t len) {
-    cig_remove_cmpl_evt evt;
+    cig_remove_cmpl_evt evt{};
 
     log::assert_that(len == 2, "Invalid packet length: {}", len);
 
@@ -532,7 +533,7 @@ struct iso_impl {
     STREAM_TO_UINT8(status, stream);
 
     for (auto cis_param : conn_params.conn_pairs) {
-      cis_establish_cmpl_evt evt;
+      cis_establish_cmpl_evt evt{};
 
       auto stream_ptr = GetStream(cis_param.cis_conn_handle);
       log::assert_that(stream_ptr != nullptr, "No such cis: {}", cis_param.cis_conn_handle);
@@ -1062,7 +1063,7 @@ struct iso_impl {
   void on_cis_request_reject_status(uint8_t* data, uint16_t len) {
     log::assert_that(len == 3, "Invalid packet length: {}", len);
 
-    reject_cis_request_reject_status evt;
+    reject_cis_request_reject_status evt{};
     STREAM_TO_UINT8(evt.status, data);
     STREAM_TO_UINT16(evt.cis_conn_hdl, data);
 
@@ -1091,7 +1092,7 @@ struct iso_impl {
   void process_cis_req_pkt(uint8_t len, uint8_t* data) {
     log::assert_that(len == 6, "Invalid packet length: {}", len);
 
-    cis_request_evt evt;
+    cis_request_evt evt{};
     STREAM_TO_UINT16(evt.acl_conn_hdl, data);
     STREAM_TO_UINT16(evt.cis_conn_hdl, data);
     STREAM_TO_UINT8(evt.cig_id, data);
@@ -1162,7 +1163,7 @@ struct iso_impl {
     auto stream_ptr = std::make_unique<iso_stream>();
     stream_ptr->conn_handle = evt.cis_conn_hdl;
     stream_ptr->group_id = evt.cig_id;
-    stream_ptr->sdu_itv = 0;
+    stream_ptr->sdu_interval = 0;
     stream_ptr->sync_info = {.tx_seq_nb = 0, .rx_seq_nb = 0};
     stream_ptr->used_credits = 0;
     stream_ptr->state_flags = kStateFlagIsIncoming;
@@ -1173,7 +1174,7 @@ struct iso_impl {
   }
 
   void process_cis_est_pkt(uint8_t len, uint8_t* data) {
-    cis_establish_cmpl_evt evt;
+    cis_establish_cmpl_evt evt{};
 
     // The length of the LE CIS Established event v4 is 51 octets
     // TODO: Remove this when corestack adds V4 function separately
@@ -1227,7 +1228,7 @@ struct iso_impl {
     STREAM_TO_UINT8(evt.ft_p_to_c, data);
     STREAM_TO_UINT16(evt.max_pdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_pdu_p_to_c, data);
-    STREAM_TO_UINT16(evt.iso_itv, data);
+    STREAM_TO_UINT16(evt.iso_interval, data);
     // New parameters from v4 of LE CIS Established event
     // TODO: Remove this when corestack adds V4 function separately
     if(hdt_enabled && shim::GetController()->SupportsBleHDTPhy()) {
@@ -1327,7 +1328,7 @@ struct iso_impl {
     STREAM_TO_UINT8(evt.ft_p_to_c, data);
     STREAM_TO_UINT16(evt.max_pdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_pdu_p_to_c, data);
-    STREAM_TO_UINT16(evt.iso_itv, data);
+    STREAM_TO_UINT16(evt.iso_interval, data);
     STREAM_TO_UINT24(evt.sub_itv, data);
     STREAM_TO_UINT16(evt.max_sdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_sdu_p_to_c, data);
@@ -1417,7 +1418,7 @@ struct iso_impl {
     STREAM_TO_UINT8(evt.ft_p_to_c, data);
     STREAM_TO_UINT16(evt.max_pdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_pdu_p_to_c, data);
-    STREAM_TO_UINT16(evt.iso_itv, data);
+    STREAM_TO_UINT16(evt.iso_interval, data);
     STREAM_TO_UINT24(evt.sub_itv, data);
     STREAM_TO_UINT16(evt.max_sdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_sdu_p_to_c, data);
@@ -1590,7 +1591,7 @@ struct iso_impl {
   }
 
   void process_create_big_cmpl_pkt(uint8_t len, uint8_t* data) {
-    struct big_create_cmpl_evt evt;
+    big_create_cmpl_evt evt{};
 
     log::assert_that(len >= 18, "Invalid packet length: {}", len);
 
@@ -1630,7 +1631,7 @@ struct iso_impl {
         auto stream_ptr = std::make_unique<iso_stream>();
         stream_ptr->conn_handle = conn_handle;
         stream_ptr->group_id = evt.big_handle;
-        stream_ptr->sdu_itv = last_big_create_req_sdu_itv_;
+        stream_ptr->sdu_interval = last_big_create_req_sdu_interval_;
         stream_ptr->sync_info = {.tx_seq_nb = 0, .rx_seq_nb = 0};
         stream_ptr->used_credits = 0;
         stream_ptr->state_flags = kStateFlagIsBroadcastSource;
@@ -1700,7 +1701,7 @@ struct iso_impl {
         auto stream_ptr = std::make_unique<iso_stream>();
         stream_ptr->conn_handle = conn_handle;
         stream_ptr->group_id = evt.big_handle;
-        stream_ptr->sdu_itv = last_big_create_req_sdu_itv_;
+        stream_ptr->sdu_interval = last_big_create_req_sdu_interval_;
         stream_ptr->sync_info = {.tx_seq_nb = 0, .rx_seq_nb = 0};
         stream_ptr->used_credits = 0;
         stream_ptr->state_flags = kStateFlagIsBroadcastSource;
@@ -1727,7 +1728,7 @@ struct iso_impl {
   }
 
   void process_terminate_big_cmpl_pkt(uint8_t len, uint8_t* data) {
-    struct big_terminate_cmpl_evt evt;
+    big_terminate_cmpl_evt evt{};
 
     log::assert_that(len == 2, "Invalid packet length: {}", len);
 
@@ -1778,9 +1779,9 @@ struct iso_impl {
       big_params.enc_code = {0};
     }
 
-    last_big_create_req_sdu_itv_ = big_params.sdu_itv;
+    last_big_create_req_sdu_interval_ = big_params.sdu_interval;
     btsnd_hcic_ble_create_big(big_handle, big_params.adv_handle, big_params.num_bis,
-                              big_params.sdu_itv, big_params.max_sdu_size,
+                              big_params.sdu_interval, big_params.max_sdu_size,
                               big_params.max_transport_latency, big_params.rtn, big_params.phy,
                               big_params.packing, big_params.framing, big_params.enc,
                               big_params.enc_code);
@@ -1816,7 +1817,7 @@ struct iso_impl {
   void process_big_sync_est_pkt(uint8_t len, uint8_t* data) {
     log::assert_that(len >= 14, "Invalid packet length: {}", len);
 
-    struct big_sync_est_evt evt;
+    big_sync_est_evt evt{};
 
     STREAM_TO_UINT8(evt.status, data);
     STREAM_TO_UINT8(evt.big_handle, data);
@@ -1860,7 +1861,7 @@ struct iso_impl {
         auto stream_ptr = std::make_unique<iso_stream>();
         stream_ptr->conn_handle = conn_handle;
         stream_ptr->group_id = evt.big_handle;
-        stream_ptr->sdu_itv = evt.iso_interval * 1250; /* sdu_itv in us */
+        stream_ptr->sdu_interval = evt.iso_interval * 1250; /* sdu_interval in us */
         stream_ptr->sync_info = {.tx_seq_nb = 0, .rx_seq_nb = 0};
         stream_ptr->used_credits = 0;
         stream_ptr->state_flags = kStateFlagIsBroadcastSink;
@@ -1886,7 +1887,7 @@ struct iso_impl {
   void process_big_sync_lost_pkt(uint8_t len, uint8_t* data) {
     log::assert_that(len == 2, "Invalid packet length: {}", len);
 
-    struct big_sync_lost_evt evt;
+    big_sync_lost_evt evt{};
 
     STREAM_TO_UINT8(evt.big_handle, data);
     STREAM_TO_UINT8(evt.reason, data);
@@ -1917,7 +1918,7 @@ struct iso_impl {
   void on_big_terminate_sync_cmpl(uint8_t* stream, uint16_t len) {
     log::assert_that(len == 2, "Invalid packet length: {}", len);
 
-    big_terminate_sync_cmpl_evt evt;
+    big_terminate_sync_cmpl_evt evt{};
 
     STREAM_TO_UINT8(evt.status, stream);
     STREAM_TO_UINT8(evt.big_handle, stream);
@@ -2200,7 +2201,7 @@ struct iso_impl {
         auto& stream = stream_it->second;
         dprintf(fd, "        %s Connection handle: %d\n", stream_name.c_str(), stream->conn_handle);
         dprintf(fd, "          Used Credits: %d\n", stream->used_credits.load());
-        dprintf(fd, "          SDU Interval: %d\n", stream->sdu_itv);
+        dprintf(fd, "          SDU Interval: %d\n", stream->sdu_interval);
         dprintf(fd, "          State Flags: 0x%02hx\n", stream->state_flags.load());
         dump_credits_stats(fd, stream->cr_stats);
         dump_event_stats(fd, stream->evt_stats);
@@ -2228,7 +2229,7 @@ struct iso_impl {
 
   std::atomic_uint16_t iso_credits_;
   uint16_t iso_buffer_size_;
-  uint32_t last_big_create_req_sdu_itv_;
+  uint32_t last_big_create_req_sdu_interval_;
 
   VscCallback* vsc_callback_ = nullptr;
   std::list<std::function<void(bool)>> iso_traffic_active_callbacks_list_;

@@ -423,7 +423,7 @@ private:
     struct bluetooth::hci::iso_manager::big_create_params big_params = {
             .adv_handle = GetAdvertisingSid(),
             .num_bis = sm_config_.config.GetNumBisTotal(),
-            .sdu_itv = sm_config_.config.GetSduIntervalUs(),
+            .sdu_interval = sm_config_.config.GetSduIntervalUs(),
             .max_sdu_size = sm_config_.config.GetMaxSduOctets(),
             .max_transport_latency = sm_config_.config.qos.getMaxTransportLatency(),
             .rtn = sm_config_.config.qos.getRetransmissionNumber(),

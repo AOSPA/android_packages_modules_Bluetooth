@@ -393,7 +393,7 @@ const bluetooth::hci::iso_manager::iso_data_path_params IsoManagerTest::kDefault
 const bluetooth::hci::iso_manager::big_create_params IsoManagerTest::kDefaultBigParams = {
         .adv_handle = 0x00,
         .num_bis = 2,
-        .sdu_itv = 0x002710,
+        .sdu_interval = 0x002710,
         .max_sdu_size = 108,
         .max_transport_latency = 0x3c,
         .rtn = 3,
@@ -405,8 +405,8 @@ const bluetooth::hci::iso_manager::big_create_params IsoManagerTest::kDefaultBig
 };
 
 const bluetooth::hci::iso_manager::cig_create_params IsoManagerTest::kDefaultCigParams = {
-        .sdu_itv_c_to_p = 0x00002710,
-        .sdu_itv_p_to_c = 0x00002711,
+        .sdu_interval_c_to_p = 0x00002710,
+        .sdu_interval_p_to_c = 0x00002711,
         .sca = bluetooth::hci::iso_manager::kIsoSca0To20Ppm,
         .packing = 0x00,
         .framing = 0x01,
@@ -438,8 +438,8 @@ const bluetooth::hci::iso_manager::cig_create_params IsoManagerTest::kDefaultCig
 };
 
 const bluetooth::hci::iso_manager::cig_create_params IsoManagerTest::kDefaultCigParams2 = {
-        .sdu_itv_c_to_p = 0x00002709,
-        .sdu_itv_p_to_c = 0x00002700,
+        .sdu_interval_c_to_p = 0x00002709,
+        .sdu_interval_p_to_c = 0x00002700,
         .sca = bluetooth::hci::iso_manager::kIsoSca0To20Ppm,
         .packing = 0x01,
         .framing = 0x00,
@@ -487,8 +487,9 @@ static bool operator==(const EXT_CIS_CFG& x, const EXT_CIS_CFG& y) {
 
 static bool operator==(const struct bluetooth::hci::iso_manager::cig_create_params& x,
                        const struct bluetooth::hci::iso_manager::cig_create_params& y) {
-  return (x.sdu_itv_c_to_p == y.sdu_itv_c_to_p) && (x.sdu_itv_p_to_c == y.sdu_itv_p_to_c) &&
-         (x.sca == y.sca) && (x.packing == y.packing) && (x.framing == y.framing) &&
+  return (x.sdu_interval_c_to_p == y.sdu_interval_c_to_p) &&
+         (x.sdu_interval_p_to_c == y.sdu_interval_p_to_c) && (x.sca == y.sca) &&
+         (x.packing == y.packing) && (x.framing == y.framing) &&
          (x.max_trans_lat_p_to_c == y.max_trans_lat_p_to_c) &&
          (x.max_trans_lat_c_to_p == y.max_trans_lat_c_to_p) &&
          std::is_permutation(x.cis_cfgs.begin(), x.cis_cfgs.end(), y.cis_cfgs.begin());
@@ -496,8 +497,8 @@ static bool operator==(const struct bluetooth::hci::iso_manager::cig_create_para
 
 static bool operator==(const struct bluetooth::hci::iso_manager::big_create_params& x,
                        const struct bluetooth::hci::iso_manager::big_create_params& y) {
-  return (x.adv_handle == y.adv_handle) && (x.num_bis == y.num_bis) && (x.sdu_itv == y.sdu_itv) &&
-         (x.max_sdu_size == y.max_sdu_size) &&
+  return (x.adv_handle == y.adv_handle) && (x.num_bis == y.num_bis) &&
+         (x.sdu_interval == y.sdu_interval) && (x.max_sdu_size == y.max_sdu_size) &&
          (x.max_transport_latency == y.max_transport_latency) && (x.rtn == y.rtn) &&
          (x.phy == y.phy) && (x.packing == y.packing) && (x.framing == y.framing) &&
          (x.enc == y.enc) && (x.enc_code == y.enc_code);
