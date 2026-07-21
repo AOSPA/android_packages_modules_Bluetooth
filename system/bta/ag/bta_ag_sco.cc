@@ -1791,6 +1791,20 @@ void bta_ag_sco_conn_close(tBTA_AG_SCB* p_scb, const tBTA_AG_DATA& /* data */,
       if (!exist_other_scb) {
         bta_sys_sco_unuse(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
       }
+    } else if (get_btm_client_interface().sco.BTM_GetNumScoLinks() == 0) {
+      /* SCO is really gone at the controller (no remaining SCO link on any
+       * device) but the call/RFCOMM stays alive, so the branches above are
+       * skipped. Without this, bta_sys never gets an unuse to match the earlier
+       * use, leaving BTA_AV's sco_occupied stuck at true and blocking A2DP start
+       * until the call finally ends. A2DP and SCO can coexist, so release AV
+       * here. BTM_GetNumScoLinks()==0 already proves no peer holds a SCO, so we
+       * must not add a bta_ag_other_scb_open() check: that only reports whether
+       * another peer has an SLC (BTA_AG_OPEN_ST), not a SCO, and would wrongly
+       * suppress this release whenever a second HFP device is merely connected.
+       * bta_sys_sco_unuse() re-checks the live count, so this stays correct if a
+       * SCO reappears. */
+      log::warn("SCO gone at controller, releasing AV occupancy");
+      bta_sys_sco_unuse(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
     }
 
      mAgDeviceScoConnected = false;
