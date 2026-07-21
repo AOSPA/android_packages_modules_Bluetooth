@@ -261,6 +261,10 @@ static void bta_ag_sco_disc_cback(uint16_t sco_idx, SCO_CONNECTION_FAILURES reas
       }
     }
     handle = bta_ag_scb_to_idx(bta_ag_cb.sco.p_curr_scb);
+    /* The SCO attempt is over: clear any pending deferred-accept state so a
+     * failed (managed-by-audio) HF-initiated SCO does not leave a stale
+     * sendAcceptConnectionRsp that corrupts the next call. */
+    bta_ag_cb.sco.p_curr_scb->sendAcceptConnectionRsp = false;
   }
 
   if (handle != 0) {
@@ -347,6 +351,7 @@ static void bta_ag_sco_disc_cback(uint16_t sco_idx, SCO_CONNECTION_FAILURES reas
     /* sco could be closed after scb dealloc'ed */
     if (bta_ag_cb.sco.p_curr_scb != nullptr) {
       bta_ag_cb.sco.p_curr_scb->sco_idx = BTM_INVALID_SCO_INDEX;
+      bta_ag_cb.sco.p_curr_scb->sendAcceptConnectionRsp = false;
       bta_ag_cb.sco.p_curr_scb = nullptr;
       bta_ag_cb.sco.state = BTA_AG_SCO_SHUTDOWN_ST;
     }
@@ -416,6 +421,7 @@ static void bta_ag_esco_connreq_cback(tBTM_ESCO_EVT event, tBTM_ESCO_EVT_DATA* p
           val.hdr.status = BTA_AG_SUCCESS;
           val.bd_addr = p_scb->peer_addr;
           (*bta_ag_cb.p_cback)(BTA_AG_AT_BCC_EVT, (tBTA_AG*)&val);
+          bta_ag_cb.sco.is_local = false;
           bta_ag_cb.sco.state = BTA_AG_SCO_OPENING_ST;
           bta_ag_cb.sco.p_curr_scb = p_scb;
           bta_ag_cb.sco.cur_idx = p_scb->sco_idx;
@@ -439,6 +445,7 @@ static void bta_ag_esco_connreq_cback(tBTM_ESCO_EVT event, tBTM_ESCO_EVT_DATA* p
           val.hdr.status = BTA_AG_SUCCESS;
           val.bd_addr = p_scb->peer_addr;
           (*bta_ag_cb.p_cback)(BTA_AG_AT_BCC_EVT, (tBTA_AG*)&val);
+          bta_ag_cb.sco.is_local = false;
           bta_ag_cb.sco.p_xfer_scb = p_scb;
           bta_ag_cb.sco.conn_data = p_data->conn_evt;
           bta_ag_cb.sco.state = BTA_AG_SCO_OPEN_XFER_ST;
