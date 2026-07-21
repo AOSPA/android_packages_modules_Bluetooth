@@ -261,6 +261,10 @@ static void bta_ag_sco_disc_cback(uint16_t sco_idx, SCO_CONNECTION_FAILURES reas
       }
     }
     handle = bta_ag_scb_to_idx(bta_ag_cb.sco.p_curr_scb);
+    /* The SCO attempt is over: clear any pending deferred-accept state so a
+     * failed (managed-by-audio) HF-initiated SCO does not leave a stale
+     * sendAcceptConnectionRsp that corrupts the next call. */
+    bta_ag_cb.sco.p_curr_scb->sendAcceptConnectionRsp = false;
   }
 
   if (handle != 0) {
@@ -347,6 +351,7 @@ static void bta_ag_sco_disc_cback(uint16_t sco_idx, SCO_CONNECTION_FAILURES reas
     /* sco could be closed after scb dealloc'ed */
     if (bta_ag_cb.sco.p_curr_scb != nullptr) {
       bta_ag_cb.sco.p_curr_scb->sco_idx = BTM_INVALID_SCO_INDEX;
+      bta_ag_cb.sco.p_curr_scb->sendAcceptConnectionRsp = false;
       bta_ag_cb.sco.p_curr_scb = nullptr;
       bta_ag_cb.sco.state = BTA_AG_SCO_SHUTDOWN_ST;
     }
@@ -416,6 +421,7 @@ static void bta_ag_esco_connreq_cback(tBTM_ESCO_EVT event, tBTM_ESCO_EVT_DATA* p
           val.hdr.status = BTA_AG_SUCCESS;
           val.bd_addr = p_scb->peer_addr;
           (*bta_ag_cb.p_cback)(BTA_AG_AT_BCC_EVT, (tBTA_AG*)&val);
+          bta_ag_cb.sco.is_local = false;
           bta_ag_cb.sco.state = BTA_AG_SCO_OPENING_ST;
           bta_ag_cb.sco.p_curr_scb = p_scb;
           bta_ag_cb.sco.cur_idx = p_scb->sco_idx;
@@ -439,6 +445,7 @@ static void bta_ag_esco_connreq_cback(tBTM_ESCO_EVT event, tBTM_ESCO_EVT_DATA* p
           val.hdr.status = BTA_AG_SUCCESS;
           val.bd_addr = p_scb->peer_addr;
           (*bta_ag_cb.p_cback)(BTA_AG_AT_BCC_EVT, (tBTA_AG*)&val);
+          bta_ag_cb.sco.is_local = false;
           bta_ag_cb.sco.p_xfer_scb = p_scb;
           bta_ag_cb.sco.conn_data = p_data->conn_evt;
           bta_ag_cb.sco.state = BTA_AG_SCO_OPEN_XFER_ST;
@@ -1791,6 +1798,20 @@ void bta_ag_sco_conn_close(tBTA_AG_SCB* p_scb, const tBTA_AG_DATA& /* data */,
       if (!exist_other_scb) {
         bta_sys_sco_unuse(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
       }
+    } else if (get_btm_client_interface().sco.BTM_GetNumScoLinks() == 0) {
+      /* SCO is really gone at the controller (no remaining SCO link on any
+       * device) but the call/RFCOMM stays alive, so the branches above are
+       * skipped. Without this, bta_sys never gets an unuse to match the earlier
+       * use, leaving BTA_AV's sco_occupied stuck at true and blocking A2DP start
+       * until the call finally ends. A2DP and SCO can coexist, so release AV
+       * here. BTM_GetNumScoLinks()==0 already proves no peer holds a SCO, so we
+       * must not add a bta_ag_other_scb_open() check: that only reports whether
+       * another peer has an SLC (BTA_AG_OPEN_ST), not a SCO, and would wrongly
+       * suppress this release whenever a second HFP device is merely connected.
+       * bta_sys_sco_unuse() re-checks the live count, so this stays correct if a
+       * SCO reappears. */
+      log::warn("SCO gone at controller, releasing AV occupancy");
+      bta_sys_sco_unuse(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
     }
 
      mAgDeviceScoConnected = false;
