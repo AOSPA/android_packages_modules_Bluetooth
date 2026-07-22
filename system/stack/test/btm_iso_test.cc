@@ -23,6 +23,7 @@
 
 #include "btm_iso_api.h"
 #include "btm_iso_api_types.h"
+#include "btif_status.h"
 #include "hci/controller_mock.h"
 #include "hci/hci_packets.h"
 #include "hci/include/hci_layer.h"
@@ -33,6 +34,7 @@
 #include "stack/include/btm_log_history.h"
 #include "stack/include/hci_error_code.h"
 #include "stack/include/hcidefs.h"
+#include "stack/include/main_thread.h"
 #include "stack/mock/mock_stack_hcic_layer.h"
 #include "test/mock/mock_main_shim_entry.h"
 #include "test/mock/mock_main_shim_hci_layer.h"
@@ -56,6 +58,16 @@ const BtmDevice* btm_find_dev_by_handle(uint16_t handle) {
 }
 void BTM_LogHistory(const std::string& /* tag */, const RawAddress& /* bd_addr */,
                     const std::string& /* msg */, const std::string& /* extra */) {}
+
+// This test links btm_iso.cc directly, without the real BT main-thread event
+// loop. IsoManager::Dump() guards on is_main_thread(), so returning true keeps
+// the dump on the calling (test) thread; do_in_main_thread() runs the closure
+// inline for completeness. The test itself is single-threaded.
+bool is_main_thread() { return true; }
+BtStatus do_in_main_thread(base::OnceClosure task) {
+  std::move(task).Run();
+  return BtifStatus();
+}
 
 namespace bluetooth::shim {
 class IsoInterface {

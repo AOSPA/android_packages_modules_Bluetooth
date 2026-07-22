@@ -15,6 +15,9 @@
  * limitations under the License.
  */
 
+#include <base/functional/bind.h>
+
+#include <future>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -24,6 +27,7 @@
 #include "include/btm_iso_api.h"
 #include "include/btm_iso_api_types.h"
 #include "stack/include/bt_hdr.h"
+#include "stack/include/main_thread.h"
 
 using bluetooth::hci::iso_manager::VscCallback;
 namespace bluetooth {
@@ -222,9 +226,38 @@ void IsoManager::Stop() {
 }
 
 void IsoManager::Dump(int fd) {
-  if (pimpl_->IsRunning()) {
-    pimpl_->Dump(fd);
+  if (!pimpl_->IsRunning()) {
+    return;
   }
+
+  // dumpsys reaches this on a binder thread, but all ISO state (the stream/group
+  // maps and the iso_stream objects) is mutated and freed exclusively on the BT
+  // main thread (HCI events, create/terminate BIG/CIG, CIS teardown). Reading
+  // those maps from the binder thread races those frees and manifests as an MTE
+  // async use-after-free (SEGV_MTEAERR) in dprintf's write(). Instead of locking
+  // every erase site, run the dump on the main thread so the reader is
+  // serialized with every writer by the event loop itself. Mirrors
+  // bluetooth::shim::Dump().
+  if (is_main_thread()) {
+    pimpl_->Dump(fd);
+    return;
+  }
+
+  std::promise<void> promise;
+  std::future<void> future = promise.get_future();
+  if (!do_in_main_thread(base::BindOnce(
+              [](impl* pimpl, int fd, std::promise<void> promise) {
+                if (pimpl->IsRunning()) {
+                  pimpl->Dump(fd);
+                }
+                promise.set_value();
+              },
+              pimpl_.get(), fd, std::move(promise)))) {
+    // Main thread not available to post to; skip rather than risk a hang.
+    log::warn("Unable to post ISO dump to main thread");
+    return;
+  }
+  future.wait();
 }
 
 bool IsoManager::AddIncomingCisEventsListener(IsoClientHandle client_handle,
