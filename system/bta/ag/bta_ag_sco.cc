@@ -514,6 +514,8 @@ void bta_ag_create_sco(tBTA_AG_SCB* p_scb, bool is_orig) {
   log::debug("BEFORE {}", p_scb->ToString());
   tBTA_AG_UUID_CODEC esco_codec = tBTA_AG_UUID_CODEC::UUID_CODEC_CVSD;
   bool is_hf_client_enabled = osi_property_get_bool("bluetooth.profile.hfp.hf.enabled", false);
+  bool is_dual_sco_enabled =
+                osi_property_get_bool("persist.vendor.qcom.bluetooth.dual_sco_enabled", false);
 
   if (!bta_ag_sco_is_active_device(p_scb->peer_addr)) {
     log::warn("device {} is not active, active_device={}", p_scb->peer_addr, active_device_addr);
@@ -621,9 +623,15 @@ void bta_ag_create_sco(tBTA_AG_SCB* p_scb, bool is_orig) {
         params = esco_parameters_for_codec(ESCO_CODEC_CVSD_S3, offload);
       }
        if (is_hf_client_enabled) {
-         log::info("hf_client is also enabled. using always 2EV2 packets only");
-         params.packet_types = ESCO_PKT_TYPES_MASK_NO_3_EV3 |
+         if (is_dual_sco_enabled) {
+           log::info("hf_client is also enabled. using 2EV2 packets only");
+           params.packet_types = ESCO_PKT_TYPES_MASK_NO_3_EV3 |
                   ESCO_PKT_TYPES_MASK_NO_2_EV5 | ESCO_PKT_TYPES_MASK_NO_3_EV5;
+         } else {
+           log::info("hf_client is also enabled. using EV3 + 2-EV3 packets only");
+           params.packet_types = ESCO_PKT_TYPES_MASK_EV3 | ESCO_PKT_TYPES_MASK_NO_3_EV3 |
+                  ESCO_PKT_TYPES_MASK_NO_2_EV5 | ESCO_PKT_TYPES_MASK_NO_3_EV5;
+         }
       }
 
       bool value = false;
