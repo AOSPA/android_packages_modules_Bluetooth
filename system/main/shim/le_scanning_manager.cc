@@ -47,6 +47,7 @@
 #include "stack/btm/internal/btm_api.h"
 #include "stack/include/advertise_data_parser.h"
 #include "stack/include/ble_hci_link_interface.h"
+#include "stack/include/inq_hci_link_interface.h"
 #include "stack/include/bt_dev_class.h"
 #include "stack/include/btm_ble_addr.h"
 #include "stack/include/btm_log_history.h"
@@ -721,7 +722,19 @@ void BleScannerInterfaceImpl::OnBigInfoReport(uint16_t sync_handle, bool encrypt
                                   base::Unretained(scanning_callbacks_), sync_handle, encrypted));
 }
 
-void BleScannerInterfaceImpl::OnTimeout() {}
+void BleScannerInterfaceImpl::OnTimeout() {
+  // When the migrate_btm_scan_to_gd flag is enabled, the GD scanning manager
+  // handles the discovery timer internally and calls OnTimeout() when the
+  // discovery duration expires. We must propagate this to btm_process_inq_complete()
+  // so that inqparms.mode is cleared (BTM_BLE_GENERAL_INQUIRY bit) and the BTA
+  // search state machine can transition from BTA_DM_SEARCH_ACTIVE back to IDLE.
+  // Without this, the inquiry completion callback is suppressed and subsequent
+  // discovery requests are rejected as unexpected events.
+  if (com_android_bluetooth_flags_migrate_btm_scan_to_gd()) {
+    do_in_main_thread(base::BindOnce(
+            []() { btm_process_inq_complete(HCI_SUCCESS, BTM_BLE_GENERAL_INQUIRY); }));
+  }
+}
 void BleScannerInterfaceImpl::OnFilterEnable(bluetooth::hci::Enable /* enable */,
                                              uint8_t /* status */) {}
 void BleScannerInterfaceImpl::OnFilterParamSetup(uint8_t /* available_spaces */,
