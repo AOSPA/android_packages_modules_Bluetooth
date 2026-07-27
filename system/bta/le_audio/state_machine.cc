@@ -1515,6 +1515,10 @@ public:
       for (auto& ase : leAudioDevice->ases_) {
         ase.cis_id = bluetooth::le_audio::kInvalidCisId;
         ase.cis_conn_hdl = bluetooth::le_audio::kInvalidCisConnHandle;
+        // Peer's preferred Phy is per-CIS; clear it so it doesn't leak into
+        // whatever new cis_id gets assigned next.
+        ase.qos_preferences.preferred_phy = 0;
+        log::verbose("Reset QoS Pref phy as CIS release");
         if (com_android_bluetooth_flags_leaudio_fix_clear_cises_in_the_cig()) {
           ase.cis_state = CisState::IDLE;
           ase.data_path_state = DataPathState::IDLE;
