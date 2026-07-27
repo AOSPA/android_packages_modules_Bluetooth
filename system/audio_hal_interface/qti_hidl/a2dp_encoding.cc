@@ -1245,6 +1245,27 @@ void get_hal_version() {
 
 static bool is_qti_hal_enabled = false;
 
+// The legacy QTI Bluetooth Audio HIDL HAL has no LHDCv5 CodecConfiguration
+// variant. Keep hardware offload for the codecs it supports, but use the
+// software encoder and PCM data path when LHDCv5 is selected.
+static bool use_hw_a2dp_offload() {
+  if (!btif_av_is_a2dp_offload_enabled()) {
+    return false;
+  }
+
+  A2dpCodecConfig* a2dp_config = bta_av_get_a2dp_current_codec();
+  if (a2dp_config == nullptr ||
+      a2dp_config->getCodecConfig().codec_type !=
+              BTAV_A2DP_CODEC_INDEX_SOURCE_LHDCV5) {
+    return true;
+  }
+
+  LOG(INFO) << __func__
+            << ": LHDCv5 selected; using software encoding because the QTI "
+               "HIDL offload HAL has no LHDC codec configuration";
+  return false;
+}
+
 bool is_qc_hal_enabled() {
   LOG(WARNING) << __func__;
   get_hal_version();
@@ -1284,7 +1305,7 @@ bool init(bluetooth::common::MessageLoopThread* message_loop) {
   get_hal_version();
   if (hal_2_1_enabled) {
     AudioConfiguration_2_1 audio_config{};
-    if (btif_av_is_a2dp_offload_enabled()) {
+    if (use_hw_a2dp_offload()) {
       CodecConfiguration_2_1 codec_config{};
       if (!a2dp_get_selected_hal_codec_config_2_1(&codec_config)) {
         LOG(ERROR) << __func__ << ": Failed to get CodecConfiguration";
@@ -1327,7 +1348,7 @@ bool init(bluetooth::common::MessageLoopThread* message_loop) {
     }
   } else {
     AudioConfiguration audio_config{};
-    if (btif_av_is_a2dp_offload_enabled()) {
+    if (use_hw_a2dp_offload()) {
       CodecConfiguration codec_config{};
       if (!a2dp_get_selected_hal_codec_config(&codec_config)) {
         LOG(ERROR) << __func__ << ": Failed to get CodecConfiguration";
@@ -1438,7 +1459,7 @@ bool setup_codec() {
 
   if (a2dp_sink_2_1) {
     AudioConfiguration_2_1 audio_config{};
-    if (btif_av_is_a2dp_offload_enabled()) {
+    if (use_hw_a2dp_offload()) {
       CodecConfiguration_2_1 codec_config{};
       if (!a2dp_get_selected_hal_codec_config_2_1(&codec_config)) {
         LOG(ERROR) << __func__ << ": Failed to get CodecConfiguration";
@@ -1477,7 +1498,7 @@ bool setup_codec() {
     return a2dp_hal_clientif->UpdateAudioConfig_2_1(audio_config);
   } else {
     AudioConfiguration audio_config{};
-    if (btif_av_is_a2dp_offload_enabled()) {
+    if (use_hw_a2dp_offload()) {
       CodecConfiguration codec_config{};
       if (!a2dp_get_selected_hal_codec_config(&codec_config)) {
         LOG(ERROR) << __func__ << ": Failed to get CodecConfiguration";
