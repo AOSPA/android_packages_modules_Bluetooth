@@ -445,7 +445,9 @@ struct iso_impl {
     bool isPhyHdt = (phy_c_to_p_or & kPhyHdt) || (phy_p_to_c_or & kPhyHdt);
     log::debug(" isPhyHdt: {}", isPhyHdt);
     bool hdt_enabled = osi_property_get_bool("persist.vendor.qcom.bluetooth.hdt.enabled", false);
-    if(isPhyHdt && hdt_enabled && shim::GetController()->SupportsBleHDTPhy()) {
+    if(isPhyHdt && hdt_enabled && shim::GetController()->SupportsBleHDTPhy() &&
+       bluetooth::shim::GetController()->IsSupported(
+               bluetooth::hci::OpCode::LE_SET_CIG_PARAMETERS_V2)) {
       btsnd_hcic_set_cig_params_v2(
               cig_id, cig_params.sdu_interval_c_to_p, cig_params.sdu_interval_p_to_c, cig_params.sca,
               cig_params.packing, cig_params.framing, cig_params.max_trans_lat_c_to_p,
@@ -1174,16 +1176,9 @@ struct iso_impl {
   }
 
   void process_cis_est_pkt(uint8_t len, uint8_t* data) {
+    log::verbose("");
     cis_establish_cmpl_evt evt{};
-
-    // The length of the LE CIS Established event v4 is 51 octets
-    // TODO: Remove this when corestack adds V4 function separately
-    bool hdt_enabled = osi_property_get_bool("persist.vendor.qcom.bluetooth.hdt.enabled", false);
-    if(hdt_enabled && shim::GetController()->SupportsBleHDTPhy()) {
-      log::assert_that(len == 51, "Invalid packet length: {}", len);
-    } else {
-      log::assert_that(len == 28, "Invalid packet length: {}", len);
-    }
+    log::assert_that(len == 28, "Invalid packet length: {}", len);
 
     STREAM_TO_UINT8(evt.status, data);
     STREAM_TO_UINT16(evt.cis_conn_hdl, data);
@@ -1229,22 +1224,6 @@ struct iso_impl {
     STREAM_TO_UINT16(evt.max_pdu_c_to_p, data);
     STREAM_TO_UINT16(evt.max_pdu_p_to_c, data);
     STREAM_TO_UINT16(evt.iso_interval, data);
-    // New parameters from v4 of LE CIS Established event
-    // TODO: Remove this when corestack adds V4 function separately
-    if(hdt_enabled && shim::GetController()->SupportsBleHDTPhy()) {
-      STREAM_TO_UINT16(evt.sub_itv, data); // 2 octets
-      STREAM_TO_UINT16(evt.max_sdu_c_to_p, data); // 2 octets
-      STREAM_TO_UINT16(evt.max_sdu_p_to_c, data); // 2 octets
-      STREAM_TO_UINT24(evt.sdu_itv_c_to_p, data); // 3 octets
-      STREAM_TO_UINT24(evt.sdu_itv_p_to_c, data); // 3 octets
-      STREAM_TO_UINT8(evt.framing, data); // 1 octet
-      STREAM_TO_UINT16(evt.rates_c_to_p, data); // 2 octets
-      STREAM_TO_UINT16(evt.rates_p_to_c, data); // 2 octets
-      STREAM_TO_UINT8(evt.config_id, data); // 1 octet
-      STREAM_TO_UINT8(evt.tl_group_id, data); // 1 octet
-      STREAM_TO_UINT8(evt.encryption_enabled, data); // 1 octet
-      STREAM_TO_UINT8(evt.mic_length, data); // 1 octet
-    }
 
     stream_ptr->state_flags &= ~kStateFlagIsConnecting;
 
@@ -1296,6 +1275,7 @@ struct iso_impl {
   }
 
   void process_cis_est_pkt_v2(uint8_t len, uint8_t* data) {
+    log::verbose("");
     cis_establish_cmpl_evt evt;
 
     log::assert_that(len == 42, "Invalid packet length: {}", len);
@@ -1387,6 +1367,7 @@ struct iso_impl {
   }
 
   void process_cis_est_pkt_v3(uint8_t len, uint8_t* data) {
+    log::verbose("");
     cis_establish_cmpl_evt evt;
     log::assert_that(len == 50, "Invalid packet length: {}", len);
     STREAM_TO_UINT8(evt.status, data);
@@ -1791,6 +1772,39 @@ struct iso_impl {
     log::assert_that(IsBigSourceKnown(big_handle), "No such big: {}", big_handle);
 
     btsnd_hcic_ble_term_big(big_handle, reason);
+  }
+
+  void handle_create_big_command_status(uint8_t big_handle, uint8_t status) {
+    // Only failures are expected here. A success command status is followed by
+    // a real BIG Create Complete event and must not be turned into a synthetic
+    // completion (which would carry no connection handles and mislead the
+    // broadcaster into the success path).
+    if (status == HCI_SUCCESS) {
+      log::warn("Ignoring success command status for big_handle={}", big_handle);
+      return;
+    }
+
+    log::error("LE_CREATE_BIG command status failure: big_handle={} status={}", big_handle,
+               hci_status_code_text(static_cast<tHCI_STATUS>(status)));
+
+    IsoManagerCallbacks* client_cbs = get_client_callbacks_from_big(big_handle, /* is_source = */ true);
+    if (!client_cbs || !client_cbs->big_callbacks) {
+      log::error("No BIG callbacks registered for big_handle={}", big_handle);
+      const std::lock_guard<std::mutex> lock(iso_client_mutex_);
+      source_big_handle_to_group_map_.erase(big_handle);
+      return;
+    }
+
+    struct big_create_cmpl_evt evt = {};
+    evt.status = status;
+    evt.big_handle = big_handle;
+
+    {
+      const std::lock_guard<std::mutex> lock(iso_client_mutex_);
+      source_big_handle_to_group_map_.erase(big_handle);
+    }
+
+    client_cbs->big_callbacks->OnBigSourceEvent(BigSourceEvent::kCreateCmpl, &evt);
   }
 
   void big_create_sync(IsoClientHandle client_handle, struct big_create_sync_params sync_params) {

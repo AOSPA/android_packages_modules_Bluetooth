@@ -1277,7 +1277,16 @@ LeAudioDeviceGroup::GetAudioSetConfigurationRequirements(types::LeAudioContextTy
       }
       break;
     case ::bluetooth::le_audio::types::LeAudioContextType::MEDIA:
-      if (dsa_.mode == DsaMode::ISO_SW || dsa_.mode == DsaMode::ISO_HW) {
+     // Requesting the DSA (SPATIAL_AUDIO) config makes the BT audio HAL pick a
+     // config from the spatial-audio family. For a single stereo-capable device
+     // (STEREO_ONE_CIS_PER_DEVICE) that family resolves to the two-CIS
+     // "Two-OneChan" layout, needlessly splitting stereo into two mono CISes.
+     // Skip the SPATIAL_AUDIO requirement for such groups so the single
+     // dual-channel CIS is kept; DSA head-tracking still works over that CIS
+     // via the static-fallback ISO return path (ApplyDsaParams).
+      if ((dsa_.mode == DsaMode::ISO_SW || dsa_.mode == DsaMode::ISO_HW) &&
+          GetGroupSinkStrategy() !=
+                  types::LeAudioConfigurationStrategy::STEREO_ONE_CIS_PER_DEVICE) {
         log::debug("Setting the DSA flag for mode: {}", common::ToString(dsa_.mode));
         // Set the DSA flags
         new_req.flags = CodecManager::Flags(new_req.flags | CodecManager::Flags::SPATIAL_AUDIO);
