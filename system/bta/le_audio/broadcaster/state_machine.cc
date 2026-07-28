@@ -608,6 +608,8 @@ private:
         } else {
           log::error("State={} Event={}. Unable to create big, big_handle={}, status={}",
                      ToString(GetState()), event, evt->big_handle, evt->status);
+          SetState(State::CONFIGURED);
+          callbacks_->OnBigCreationFailed(GetBroadcastId(), evt->status);
         }
       } break;
       case HCI_BLE_TERM_BIG_CPL_EVT: {
