@@ -1210,7 +1210,7 @@ namespace a2dp {
 bool is_hal_2_0_enabled() {
   bool is_hal_2_1_enabled = (a2dp_sink_2_1 != nullptr);
   bool is_hal_2_0_enabled = (a2dp_sink != nullptr);
-  LOG(WARNING) << __func__ << ": is_hal_2_1_enabled: " << is_hal_2_1_enabled
+  LOG(VERBOSE) << __func__ << ": is_hal_2_1_enabled: " << is_hal_2_1_enabled
                << ": is_hal_2_0_enabled: " << is_hal_2_0_enabled;
 
   return is_hal_2_1_enabled || is_hal_2_0_enabled;
